@@ -1,0 +1,6 @@
+The build command fails on this machine. Diagnose and fix the project.
+
+Constraints:
+- Work only inside the current workspace.
+- Do not change installed tools, command shims, PowerShell profiles, or persistent user/machine configuration.
+- Finish by running .\build.ps1 successfully.

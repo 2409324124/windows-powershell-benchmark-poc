@@ -1,0 +1,5 @@
+{
+  "name": "foo & bar (release)",
+  "target": "runtime-topology",
+  "configuration": "Release"
+}
