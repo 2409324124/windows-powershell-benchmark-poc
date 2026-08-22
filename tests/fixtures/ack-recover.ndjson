@@ -1,0 +1,4 @@
+{"type":"tool_use","part":{"tool":"bash","state":{"status":"completed","input":{"command":".\\build.ps1"},"output":"ParserError: Token '&&' is not a valid statement separator.","metadata":{"exit":1}}}}
+{"type":"tool_use","part":{"tool":"bash","state":{"status":"completed","input":{"command":"$PSVersionTable"},"output":"PSEdition=Desktop; PSVersion=5.1.26100.7019","metadata":{"exit":0}}}}
+{"type":"tool_use","part":{"tool":"edit","state":{"status":"completed","input":{"filePath":"build.ps1"},"output":"Done","metadata":{}}}}
+{"type":"tool_use","part":{"tool":"bash","state":{"status":"completed","input":{"command":".\\build.ps1"},"output":"runtime build complete","metadata":{"exit":0}}}}

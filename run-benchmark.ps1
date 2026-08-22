@@ -7,6 +7,12 @@ param(
 
     [string]$Variant = '',
 
+    [ValidateSet('W01', 'W02', 'All')]
+    [string]$Case = 'All',
+
+    [ValidateSet('PS51', 'PS7', 'Both')]
+    [string]$ShellTrack = 'Both',
+
     [ValidateRange(10, 3600)]
     [int]$TimeoutSeconds = 300,
 
@@ -18,20 +24,27 @@ $ErrorActionPreference = 'Stop'
 
 try {
     Import-Module (Join-Path $PSScriptRoot 'src\Benchmark.psm1') -Force
-    $result = Invoke-WindowsBenchmark `
+    $result = Invoke-WindowsBenchmarkSuite `
         -RepositoryRoot $PSScriptRoot `
         -Agent $Agent `
         -Model $Model `
         -Variant $Variant `
         -TimeoutSeconds $TimeoutSeconds `
+        -Case $Case `
+        -ShellTrack $ShellTrack `
         -KeepRun:$KeepRun
 
     Write-Host ''
-    Write-Host ("Case:    {0}" -f $result.caseId)
-    Write-Host ("Agent:   {0}" -f $result.agent)
-    Write-Host ("Outcome: {0}" -f $result.outcome)
-    Write-Host ("Score:   {0}/100" -f $result.score)
-    Write-Host ("Result:  {0}" -f $result.resultPath)
+    Write-Host ("Agent:           {0}" -f $result.agent)
+    Write-Host ("Outcome:         {0}" -f $result.outcome)
+    Write-Host ("Cells:           {0}" -f $result.cellCount)
+    Write-Host ("Legacy average:  {0}/100" -f $result.legacyMacroAverage)
+    Write-Host ("Quality average: {0}/100" -f $result.qualityMacroAverage)
+    foreach ($cell in $result.results) {
+        Write-Host ("  {0}/{1}: legacy {2}, quality {3}" -f $cell.caseId, $cell.shellTrack, $cell.legacyScore, $cell.qualityScore)
+    }
+    Write-Host ("Result:          {0}" -f $result.resultPath)
+    if ($result.infrastructureFailure) { exit 2 }
     exit 0
 }
 catch {

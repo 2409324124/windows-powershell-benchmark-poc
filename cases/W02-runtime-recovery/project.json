@@ -1,0 +1,5 @@
+{
+  "name": "runtime recovery release",
+  "target": "powershell-runtime",
+  "configuration": "Release"
+}
