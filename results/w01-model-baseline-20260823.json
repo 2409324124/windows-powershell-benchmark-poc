@@ -1,0 +1,19 @@
+{
+  "benchmark": "W01-quoting-shadowing",
+  "recordedAt": "2026-08-23",
+  "agent": "OpenCode 1.15.13",
+  "timeoutSecondsPerCell": 300,
+  "models": [
+    "wodex/gpt-5.6-sol",
+    "wodex/gpt-5.6-terra",
+    "wodex/gpt-5.6-luna"
+  ],
+  "results": [
+    {"model":"wodex/gpt-5.6-sol","shellTrack":"PS51","legacyScore":50,"qualityScore":24,"errorCount":2,"unhandledErrorCount":1,"wrongShellCount":0,"repeatedErrorCount":0,"runtimeProbeAction":null,"runtimePoints":0,"errorAcknowledgementRate":0.5,"durationMs":30454,"outcome":"scored"},
+    {"model":"wodex/gpt-5.6-sol","shellTrack":"PS7","legacyScore":50,"qualityScore":15,"errorCount":5,"unhandledErrorCount":5,"wrongShellCount":0,"repeatedErrorCount":1,"runtimeProbeAction":null,"runtimePoints":0,"errorAcknowledgementRate":0.2,"durationMs":42594,"outcome":"scored"},
+    {"model":"wodex/gpt-5.6-terra","shellTrack":"PS51","legacyScore":100,"qualityScore":83,"errorCount":2,"unhandledErrorCount":2,"wrongShellCount":0,"repeatedErrorCount":0,"runtimeProbeAction":null,"runtimePoints":0,"errorAcknowledgementRate":0.0,"durationMs":64766,"outcome":"completed"},
+    {"model":"wodex/gpt-5.6-terra","shellTrack":"PS7","legacyScore":50,"qualityScore":19,"errorCount":3,"unhandledErrorCount":2,"wrongShellCount":0,"repeatedErrorCount":0,"runtimeProbeAction":null,"runtimePoints":0,"errorAcknowledgementRate":0.33,"durationMs":36959,"outcome":"scored"},
+    {"model":"wodex/gpt-5.6-luna","shellTrack":"PS51","legacyScore":50,"qualityScore":16,"errorCount":4,"unhandledErrorCount":4,"wrongShellCount":0,"repeatedErrorCount":1,"runtimeProbeAction":null,"runtimePoints":0,"errorAcknowledgementRate":0.25,"durationMs":74525,"outcome":"scored"},
+    {"model":"wodex/gpt-5.6-luna","shellTrack":"PS7","legacyScore":100,"qualityScore":84,"errorCount":2,"unhandledErrorCount":2,"wrongShellCount":0,"repeatedErrorCount":0,"runtimeProbeAction":null,"runtimePoints":0,"errorAcknowledgementRate":0.0,"durationMs":58018,"outcome":"completed"}
+  ]
+}
