@@ -5,6 +5,8 @@
 Agent runner：OpenCode 1.15.13  
 单格超时：300 秒
 
+机器可分析的逐格数据：[`official-scoreboard-v1.csv`](official-scoreboard-v1.csv)
+
 ## 正式模型范围
 
 正式成绩只统计以下五个模型，其他模型运行仅视为探索数据，不进入排名：

@@ -1,0 +1,11 @@
+scoreboard_version,recorded_at,evaluator_commit,benchmark,agent_runner,model_name,model_id,official_rank,shell_track,legacy_score,quality_score,legacy_macro_average,quality_macro_average,error_count,unhandled_error_count,wrong_shell_count,repeated_error_count,runtime_probe_action,runtime_points,error_acknowledgement_rate,duration_ms,timed_out,outcome,run_id
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,GPT-5.6 Sol,wodex/gpt-5.6-sol,5,PS51,50,24,50,19.5,2,1,0,0,,0,0.50,30454,false,scored,20260823-071229-suite-f8f3baeb
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,GPT-5.6 Sol,wodex/gpt-5.6-sol,5,PS7,50,15,50,19.5,5,5,0,1,,0,0.20,42594,false,scored,20260823-071229-suite-f8f3baeb
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,Claude Opus 5,wodex/claude-opus-5,2,PS51,100,88,75,51.5,2,1,0,0,,0,0.50,102883,false,completed,20260823-075731-suite-502093b9
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,Claude Opus 5,wodex/claude-opus-5,2,PS7,50,15,75,51.5,8,7,0,5,,2,0.38,172943,false,scored,20260823-075731-suite-502093b9
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,Qwen 3.8 Max,qwenofficial/qwen3.8-max,4,PS51,40,20,40,21,3,3,0,1,,0,0.00,300682,true,timeout,20260823-081103-suite-83a936f4
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,Qwen 3.8 Max,qwenofficial/qwen3.8-max,4,PS7,40,22,40,21,4,4,0,2,12,4,0.25,300432,true,timeout,20260823-081103-suite-83a936f4
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,Kimi K3,kimiofficial/kimi-k3,1,PS51,40,28,70,58,2,2,0,0,2,4,0.50,300377,true,timeout,20260823-082119-suite-d6c9754f
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,Kimi K3,kimiofficial/kimi-k3,1,PS7,100,88,70,58,1,1,0,0,,0,0.00,195348,false,completed,20260823-082119-suite-d6c9754f
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,DS V4 Pro,deepseek/deepseek-v4-pro,3,PS51,50,13,75,45.5,9,9,0,6,,0,0.44,178354,false,scored,20260823-082949-suite-615c5dea
+W01-v1,2026-08-23,222e36d,W01-quoting-shadowing,OpenCode 1.15.13,DS V4 Pro,deepseek/deepseek-v4-pro,3,PS7,100,78,75,45.5,5,4,0,2,,0,0.60,258326,false,completed,20260823-082949-suite-615c5dea
