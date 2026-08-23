@@ -13,9 +13,9 @@ Agent runner：OpenCode 1.15.13
 |---|---|---|
 | GPT-5.6 Sol | `wodex/gpt-5.6-sol` | 已接入 |
 | Claude Opus 5 | `wodex/claude-opus-5` | 已接入 |
-| Qwen 3.8 Max | 待确认 | 待 API |
-| Kimi K3 | 待确认 | 待 API |
-| DS V4 Pro | 待确认 | 待 API |
+| Qwen 3.8 Max | `qwenofficial/qwen3.8-max` | 已接入 |
+| Kimi K3 | `kimiofficial/kimi-k3` | 已接入 |
+| DS V4 Pro | `deepseek/deepseek-v4-pro` | 已接入 |
 
 ## 排名口径
 
@@ -31,11 +31,11 @@ Agent runner：OpenCode 1.15.13
 
 | 排名 | 模型 | PS5.1 Legacy / Quality | PS7 Legacy / Quality | 双轨 Legacy / Quality | 完成轨数 | 状态 |
 |---:|---|---:|---:|---:|---:|---|
-| 1 | Claude Opus 5 | 100 / 88 | 50 / 15 | 75 / 51.5 | 1/2 | 已完成 |
-| 2 | GPT-5.6 Sol | 50 / 24 | 50 / 15 | 50 / 19.5 | 0/2 | 已完成 |
-| — | Qwen 3.8 Max | — | — | — | — | 待 API |
-| — | Kimi K3 | — | — | — | — | 待 API |
-| — | DS V4 Pro | — | — | — | — | 待 API |
+| 1 | Kimi K3 | 40 / 28 | 100 / 88 | 70 / 58 | 1/2 | PS5.1 timeout |
+| 2 | Claude Opus 5 | 100 / 88 | 50 / 15 | 75 / 51.5 | 1/2 | 已完成 |
+| 3 | DS V4 Pro | 50 / 13 | 100 / 78 | 75 / 45.5 | 1/2 | 已完成 |
+| 4 | Qwen 3.8 Max | 40 / 20 | 40 / 22 | 40 / 21 | 0/2 | 双轨 timeout |
+| 5 | GPT-5.6 Sol | 50 / 24 | 50 / 15 | 50 / 19.5 | 0/2 | 已完成 |
 
 ## 逐格过程指标
 
@@ -47,12 +47,18 @@ Agent runner：OpenCode 1.15.13
 | GPT-5.6 Sol | PS7 | 50 | 15 | 5 | 5 | 0 | 1 | — / 0 | 0.20 | 42.594s |
 | Claude Opus 5 | PS5.1 | 100 | 88 | 2 | 1 | 0 | 0 | — / 0 | 0.50 | 102.883s |
 | Claude Opus 5 | PS7 | 50 | 15 | 8 | 7 | 0 | 5 | — / 2 | 0.38 | 172.943s |
+| Qwen 3.8 Max | PS5.1 | 40 | 20 | 3 | 3 | 0 | 1 | — / 0 | 0.00 | 300.682s timeout |
+| Qwen 3.8 Max | PS7 | 40 | 22 | 4 | 4 | 0 | 2 | 12 / 4 | 0.25 | 300.432s timeout |
+| Kimi K3 | PS5.1 | 40 | 28 | 2 | 2 | 0 | 0 | 2 / 4 | 0.50 | 300.377s timeout |
+| Kimi K3 | PS7 | 100 | 88 | 1 | 1 | 0 | 0 | — / 0 | 0.00 | 195.348s |
+| DS V4 Pro | PS5.1 | 50 | 13 | 9 | 9 | 0 | 6 | — / 0 | 0.44 | 178.354s |
+| DS V4 Pro | PS7 | 100 | 78 | 5 | 4 | 0 | 2 | — / 0 | 0.60 | 258.326s |
 
 Opus 5 的 PS7 runtime 分值来自最终文本中的 runtime 识别，不是实际 probe，因此只得 2 分；`Probe` 仍记为无。
 
-## 待补模型接入信息
+## 模型接入信息
 
-为 Qwen 3.8 Max、Kimi K3、DS V4 Pro 增加 provider 时，需要分别确认：
+新增或替换 provider 时，需要分别确认：
 
 - Base URL；
 - API key（只写入本机 OpenCode 认证存储）；
@@ -78,3 +84,6 @@ Opus 5 的 PS7 runtime 分值来自最终文本中的 runtime 识别，不是实
 
 - GPT-5.6 Sol：`.runs\20260823-071229-suite-f8f3baeb`
 - Claude Opus 5：`.runs\20260823-075731-suite-502093b9`
+- Qwen 3.8 Max：`.runs\20260823-081103-suite-83a936f4`
+- Kimi K3：`.runs\20260823-082119-suite-d6c9754f`
+- DS V4 Pro：`.runs\20260823-082949-suite-615c5dea`
