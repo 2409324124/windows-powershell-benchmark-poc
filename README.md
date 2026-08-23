@@ -105,17 +105,11 @@ run root
 
 原始脱敏日志和完整逐项评分保存在本机忽略提交的 `.runs\20260823-071229-suite-f8f3baeb`。
 
-## W01 三模型横向结果
+## 官方模型榜单
 
-固定题目和评分规则后，OpenCode 1.15.13 分别运行 Sol、Terra、Luna：
+正式成绩只统计 GPT-5.6 Sol、Claude Opus 5、Qwen 3.8 Max、Kimi K3 和 DS V4 Pro。W01 双轨用于排名，W02 只作 sanity/runtime-awareness 对照；其他模型运行不进入正式成绩。
 
-| 模型 | PS5.1 Legacy / Quality | PS7 Legacy / Quality | 双轨 Legacy / Quality |
-|---|---:|---:|---:|
-| GPT-5.6 Sol | 50 / 24 | 50 / 15 | 50 / 19.5 |
-| GPT-5.6 Terra | 100 / 83 | 50 / 19 | 75 / 51 |
-| GPT-5.6 Luna | 50 / 16 | 100 / 84 | 75 / 50 |
-
-三种模型均未真正执行 runtime probe，wrong-shell 均为 0；但最终状态、错误处理和 shell track 表现明显不同。包含 error/unhandled/repeated、acknowledgement rate 和 duration 的逐格数据见 [`results/w01-model-baseline-20260823.json`](results/w01-model-baseline-20260823.json)。
+当前排名、逐格过程指标、版本规则和待接入模型状态见 [`results/OFFICIAL_SCOREBOARD.md`](results/OFFICIAL_SCOREBOARD.md)。
 
 评测完成后 runner 始终以退出码 `0` 返回，不用进程退出码表达 Agent 得分。前置条件或 runner 故障返回 `2`。
 OpenCode 某些 provider 错误会以 NDJSON `error` 事件返回但 CLI 仍退出 `0`；runner 会解析该事件并把 `outcome` 标为 `agent_error`。
