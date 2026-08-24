@@ -27,6 +27,8 @@ class SshTarget:
     def run(self, command: str, *, timeout: int, stdin: BinaryIO | None = None) -> subprocess.CompletedProcess[bytes]:
         invocation = self.base()
         invocation[-1] += " " + subprocess.list2cmdline([command])
+        if stdin is None:
+            return subprocess.run(invocation, input=b"", capture_output=True, timeout=timeout, check=False)
         return subprocess.run(invocation, stdin=stdin, capture_output=True, timeout=timeout, check=False)
 
 
@@ -51,4 +53,3 @@ def opencode_command(
         "--variant", variant, prompt,
     )
     return subprocess.list2cmdline(list(args))
-

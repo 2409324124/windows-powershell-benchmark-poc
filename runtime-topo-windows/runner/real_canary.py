@@ -25,8 +25,8 @@ def run(config: dict, project_root: Path, output_root: Path) -> int:
 
     auth = target.run(r'"C:\Program Files\OpenCode\1.18.21\opencode.exe" auth list', timeout=30)
     orchestrator.emit('auth_checked', exit_code=auth.returncode, stdout=auth.stdout.decode('utf-8', 'replace'), stderr=auth.stderr.decode('utf-8', 'replace'))
-    if auth.returncode != 0 or b'openai' not in auth.stdout.lower():
-        orchestrator.emit('run_finished', passed=False, reason='OpenAI auth not found')
+    if auth.returncode != 0 or b'0 credentials' in auth.stdout.lower():
+        orchestrator.emit('run_finished', passed=False, reason='no OpenCode credential found')
         return 2
 
     setup = target.run(encoded_powershell((task / 'setup.ps1').read_text(encoding='utf-8')), timeout=90)

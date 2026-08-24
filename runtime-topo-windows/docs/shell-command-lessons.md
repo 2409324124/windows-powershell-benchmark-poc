@@ -270,6 +270,48 @@ set -euo pipefail
 
 ## 后续命令审查清单
 
+## Case 17：SSH 非 TTY 仍可能继承不可读 stdin
+
+症状：OpenCode 在模型初始化前立即退出：
+
+```text
+EUNKNOWN: unknown error, read
+```
+
+根因：`subprocess.run()` 未指定 stdin 时继承了主会话 PTY。SSH 远端进程看到非交互 stdin 后尝试读取，但底层 PTY 返回 EIO。
+
+正确模式：不需要输入的 SSH 子进程显式发送干净 EOF：
+
+```python
+subprocess.run(invocation, input=b"", capture_output=True, ...)
+```
+
+不能假设“不传 stdin 参数”等于 `/dev/null`。
+
+## Case 18：模型名相同不代表 provider 前缀相同
+
+症状：credential 显示 `OpenCode Go api`，但 runner 使用 `openai/gpt-5.6-luna`，启动失败。
+
+正确 slug 通过只读模型清单确认：
+
+```text
+opencode-go/gpt-5.6-luna
+```
+
+规则：锁定时分别记录 provider ID、model ID 和 variant。不得只记录显示名称，也不得在失败时静默换模型。
+
+## Case 19：任务通过不等于 agent 生命周期通过
+
+本次 PS002 evaluator 全部通过，但 OpenCode CLI 超过 300 秒未退出，因此 agent exit 为 124。
+
+评分必须拆开记录：
+
+- task/evaluator outcome；
+- agent process outcome；
+- transport/supervisor outcome。
+
+正式 supervisor 应在 guest 内记录 PID、重定向 stdout/stderr、超时后终止整个进程树、确认进程消失，再启动 evaluator。不能因产物正确就把 timeout 改写成正常退出。
+
 每次执行跨 guest 命令前检查：
 
 - [ ] 是否显式使用 `qemu:///system`？

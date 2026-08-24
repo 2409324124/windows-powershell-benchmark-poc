@@ -16,7 +16,7 @@
   - SHA-256 `e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4`
   - 120 GiB virtual capacity, approximately 9.34 GiB allocated, no backing file.
 - Canonical NVRAM/TPM state and a headless domain template captured.
-- `environment-lock.json` generated; SHA-256 `8662df5f53e8fa94b0c8b451946becfd4fbacab98149e9b8cd6d2364446e53c0`.
+- `environment-lock.json` generated; SHA-256 `2341cb0200eb29fb1eab0fd4b6d22e1ff46a678a363ad9c2d676d6f96b14145e`.
 - Exactly one disposable overlay created at user request: `canary-transport-001`.
 - SPICE is enabled on this login overlay with clipboard and file transfer enabled. The formal benchmark template remains headless and has no SPICE, installation media, USB redirection, or shared host directory.
 - Three-stream logging implementation is present: orchestrator, agent, evaluator JSONL.
@@ -26,11 +26,13 @@
 
 - Transport smoke test: **PASS**. Exact UTF-8 bytes and CRLF were checked externally.
 - Overlay boot and SSH: **PASS**.
-- OpenCode real model canary: **NOT RUN YET**.
-  - The first runner attempt stopped before task setup/model invocation because `opencode auth list` reported zero credentials.
-  - After interactive login, it reports one `OpenCode Go api` credential, not the runner-required OpenAI credential.
-  - No model request or API usage occurred during the failed attempts.
-- PS002 path quoting task, external evaluator, and JSONL runner code are ready. The intended model remains `openai/gpt-5.6-luna`, variant `medium`.
+- OpenCode real model canary with `opencode-go/gpt-5.6-luna`, variant `medium`: **EVALUATOR PASS / LIFECYCLE TIMEOUT**.
+  - Luna changed `build.ps1` to resolve `Trusted Tools\compiler.exe` with `Join-Path` and invoke it with preserved argument boundaries.
+  - Exact output, trusted provenance, and absence of the shadow marker all passed.
+  - The OpenCode CLI did not exit before the 300-second supervisor deadline, so `agent_exit=124` even though the task result scored 1.
+  - No canary OpenCode process remained after timeout. The only remaining OpenCode process was the user's interactive Explorer-launched session.
+  - Run ID: `opencode-ps002-53afe878`.
+- Earlier provider/transport attempts failed before any task change: zero credentials, wrong `openai/` provider prefix, and inherited SSH PTY stdin causing `EUNKNOWN: unknown error, read`.
 
 ## Intentional deviations / recorded risk
 
@@ -40,11 +42,11 @@
 
 ## Immediate next step
 
-Authenticate the OpenAI provider in the guest so `opencode auth list` shows an OpenAI credential, then run:
+Make the supervisor launch OpenCode with redirected stdout/stderr and an explicit guest PID, then terminate the guest process tree at deadline and collect raw JSONL before evaluation. Re-run:
 
 ```bash
 cd /home/miku/runtime-topo-windows
 python3 -m runner.run opencode-canary --output ./results
 ```
 
-The evaluator is invoked only after the OpenCode process exits and is not written into the guest beforehand.
+The evaluator is invoked only after the agent process/SSH transport has stopped and is not written into the guest beforehand.

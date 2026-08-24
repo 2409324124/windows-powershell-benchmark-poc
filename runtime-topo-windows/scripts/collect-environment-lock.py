@@ -110,7 +110,7 @@ def main() -> int:
         'guest': guest,
         'session_defaults': {
             'user': 'Administrator',
-            'opencode_model': 'openai/gpt-5.6-luna',
+            'opencode_model': 'opencode-go/gpt-5.6-luna',
             'opencode_variant': 'medium',
             'opencode_agent': 'bench',
             'agent_timeout_seconds': 300,
