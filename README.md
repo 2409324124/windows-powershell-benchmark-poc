@@ -1,6 +1,34 @@
+<p align="center">
+  <a href="https://powershell.shinonome.xyz/">
+    <img src="docs/assets/hackathon-overview.png" alt="Windows PowerShell Benchmark 项目总览" width="100%">
+  </a>
+</p>
+
 # Windows PowerShell Benchmark PoC
 
-这是一个面向 coding agent 的本地 Windows runtime-topology benchmark。默认执行 `W01/W02 × PowerShell 5.1/7` 四格矩阵，每格使用独立工作区和独立 Agent 调用。
+> 黑客松演讲与完整幻灯片：<https://powershell.shinonome.xyz/>
+
+这是一个面向 coding agent 的真实 Windows / PowerShell benchmark。仓库目前包含两条互补路径：
+
+- 根目录的确定性本地 PoC：执行 `W01/W02 × PowerShell 5.1/7` 四格矩阵，每格使用独立工作区和独立 Agent 调用；
+- [`runtime-topo-windows/`](runtime-topo-windows/)：在 KVM/QEMU/libvirt 上启动 Windows Server 2025，每次评测从固定只读基础镜像派生一次性 qcow2 overlay，并由 guest 外的 supervisor/evaluator 控制和验证。
+
+## 当前 KVM 里程碑
+
+截至 2026-08-24，Windows Server 2025 Standard Evaluation Desktop Experience 基础环境已经冻结，锁定 OpenCode 1.18.21、PowerShell 7.6.4 和 Git for Windows 2.55.0.windows.5。基础 qcow2 的 SHA-256 为：
+
+```text
+e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
+```
+
+外部 transport canary 已通过。首个真实模型 canary 使用 `opencode-go/gpt-5.6-luna`（`medium`）：精确输出、trusted provenance 与 shadow marker 排除均通过 evaluator；但 OpenCode CLI 未在 300 秒 supervisor 截止时间前退出，因此该次记录为 **EVALUATOR PASS / LIFECYCLE TIMEOUT**，不能视作完整生命周期通过。
+
+- 当前实施状态：[`runtime-topo-windows/STATUS.md`](runtime-topo-windows/STATUS.md)
+- 可审计环境锁：[`runtime-topo-windows/environment-lock.json`](runtime-topo-windows/environment-lock.json)
+- 部署与 shell 失败案例：[`runtime-topo-windows/docs/shell-command-lessons.md`](runtime-topo-windows/docs/shell-command-lessons.md)
+- 正式 benchmark 模板保持 headless；登录 overlay 为安装和认证临时开启 SPICE 剪贴板及文件传输。
+
+基础镜像不提交到 Git。仓库只保存配置、锁文件、runner、日志格式和可复现的状态说明。
 
 `W01-quoting-shadowing` 覆盖：
 
@@ -118,14 +146,16 @@ OpenCode 某些 provider 错误会以 NDJSON `error` 事件返回但 CLI 仍退�
 
 OpenCode 使用 `OPENCODE_CONFIG_CONTENT` 注入最高优先级的专用 `bench` agent 配置：默认拒绝所有工具，只开放工作区内 read/glob/grep/list/edit、只读诊断命令和执行当前 `build.ps1`。外部目录、网络、skills、subagents、MCP、未知工具及通用 shell 写命令均被拒绝。
 
-这只是防误操作措施，不是恶意代码安全沙箱。OpenCode 仍以当前 Windows 用户身份运行；不要在包含敏感可写数据的账号上执行不受信任的 Agent。后续 ACL、服务、注册表、计划任务或重启题必须迁移到 Hyper-V/其他一次性 Windows VM。
+这只是防误操作措施，不是恶意代码安全沙箱。OpenCode 仍以当前 Windows 用户身份运行；不要在包含敏感可写数据的账号上执行不受信任的 Agent。
+
+KVM 路径把 Agent 放进一次性 Windows guest，且 ground truth、scorer 与 libvirt 控制面位于 guest 外。正式模板不挂载宿主目录、不暴露 libvirt/QEMU monitor/Docker socket，也不启用 SPICE、USB 重定向或共享剪贴板。虚拟机隔离仍不是绝对安全边界；guest-to-host 漏洞、网络侧向访问、资源耗尽和基础镜像供应链仍需单独防护。
 
 ## 前置条件
 
 - Windows PowerShell 5.1 与 PowerShell 7（当前基线为 7.6.4）；
 - Git；
 - Windows 自带的 .NET Framework `csc.exe`；
-- OpenCode `1.15.13`；
+- 根目录本地 PoC 的既有基线为 OpenCode `1.15.13`；KVM Windows Server 环境锁定 OpenCode `1.18.21`；
 - 真实评测时，本机 OpenCode 已完成对应模型认证。
 
 所有题目与脚本文本使用 UTF-8。OpenCode 的认证文件只由本机客户端读取，runner 不复制、不序列化，也不写入日志。
