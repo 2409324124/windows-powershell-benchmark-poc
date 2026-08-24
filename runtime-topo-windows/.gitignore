@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+results/
+config/known_hosts
+config/ws2025-base-build-v001.xml
+*.part
+*.tmp
+

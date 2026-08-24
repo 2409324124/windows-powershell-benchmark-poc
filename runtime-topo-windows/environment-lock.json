@@ -1,0 +1,143 @@
+{
+  "base": {
+    "backing_file": null,
+    "format": "qcow2",
+    "path": "/mnt/PM983/windows-benchmark/base/ws2025-opencode-1.18.21-v001.qcow2",
+    "readonly_mode": "0o440",
+    "sha256": "e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4",
+    "virtual_bytes": 128849018880
+  },
+  "created_at": "2026-08-24T14:01:27Z",
+  "domain_template": {
+    "clipboard": false,
+    "graphics": false,
+    "host_shared_directories": false,
+    "installation_media": false,
+    "network": "wcb-nat",
+    "path": "/home/miku/runtime-topo-windows/config/ws2025-domain-template.xml",
+    "sha256": "c7bdfa0d2090686c70f2f4f1ea1df71546cd5f1e5ef94f0ff7ff7aea597df7fb"
+  },
+  "firmware": {
+    "enrolled_keys": true,
+    "loader": "/usr/share/OVMF/OVMF_CODE_4M.ms.fd",
+    "loader_sha256": "1dbb7f9b7e7285b950929bbbc1494c186bfb061cde60cf531ff9756ef87dab7a",
+    "nvram": "/mnt/PM983/windows-benchmark/base/ws2025-opencode-1.18.21-v001_VARS.fd",
+    "nvram_sha256": "9fe3ce40b17b9ff2c9a483cdcae34b7eacec9da76cbbaf1495686acbd9da1438",
+    "secure_boot": true,
+    "tpm_manifest_sha256": "7b068d6e03b65eb4f88847e38ed286466154196a0266ffdafd5074ae1f7663d3",
+    "tpm_state": "/mnt/PM983/windows-benchmark/base/ws2025-opencode-1.18.21-v001_tpm",
+    "tpm_version": "2.0"
+  },
+  "guest": {
+    "build": "26100",
+    "computer_name": "WIN-LFQUF0PCQ3C",
+    "culture": "en-US",
+    "display_version": "24H2",
+    "edition_id": "ServerStandardEval",
+    "git": {
+      "exe_sha256": "78211c7ed73988da93a6d8a33d47ec6187f464d7ea2a9a00c182bbd7a1ecf30f",
+      "version": "git version 2.55.0.windows.5"
+    },
+    "hotfixes": [
+      "KB5042098",
+      "KB5043080",
+      "KB5043113"
+    ],
+    "install_date": "2026-08-25T01:24:11.0000000Z",
+    "last_boot": "2026-08-24T10:03:56.0814640Z",
+    "license": {
+      "grace_minutes": 14221,
+      "status": 2
+    },
+    "manufacturer": "QEMU",
+    "model": "Ubuntu 24.04 PC (Q35 + ICH9, 2009)",
+    "network": {
+      "adapter": "Ethernet",
+      "ipv4": "192.168.122.245",
+      "mac": "52-54-00-9F-F6-3E"
+    },
+    "opencode": {
+      "auth_present": false,
+      "config_sha256": "bb65d6efde403df521ddc1f15be0deb92ef8e6c132cfb55074f85b6b94b446b5",
+      "exe_sha256": "ea4f4d4bec95cd41baf0fc53adc4e34b31e1c8676dc5b2507c8797ab1884af18",
+      "version": "1.18.21"
+    },
+    "os_version": "10.0.26100",
+    "powershell": {
+      "exe_sha256": "db6dd81183fe57d22e03b911ec9a30a2fd7c40542e97743615355a6fb44f458f",
+      "profiles_present": false,
+      "pwsh": "7.6.4",
+      "windows": "5.1.26100.1591"
+    },
+    "product_name": "Windows Server 2025 Standard Evaluation",
+    "schema": "wcb.guest-lock-facts/v1",
+    "services": {
+      "qemu_ga": "Running",
+      "sshd": "Running",
+      "windows_update": "Stopped"
+    },
+    "timezone": "UTC",
+    "ui_culture": "en-US",
+    "update_policy": {
+      "au_options": 1,
+      "no_auto_update": 1
+    }
+  },
+  "host": {
+    "architecture": "x86_64",
+    "cpu_mode": "host-passthrough",
+    "hostname": "miku-MS03-CE0-000",
+    "kernel": "7.0.0-30-generic",
+    "libvirt": "Compiled against library: libvirt 10.0.0\nUsing library: libvirt 10.0.0\nUsing API: QEMU 10.0.0\nRunning hypervisor: QEMU 8.2.2",
+    "machine_type": "pc-q35-noble",
+    "memory_kib": 16777216,
+    "os_release": "Ubuntu 24.04",
+    "qemu": "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)",
+    "vcpu": 8
+  },
+  "known_risks": [
+    "Windows Server Evaluation grace state is intentionally not activated by request.",
+    "Guest Administrator privilege is contained by the disposable VM boundary, not a substitute for a hypervisor security boundary."
+  ],
+  "network": {
+    "bridge": "virbr-wcb",
+    "cidr": "192.168.122.0/24",
+    "gateway": "192.168.122.1",
+    "guest_ssh_allowed_source": "192.168.122.1",
+    "inbound_port_forwards": [],
+    "mode": "nat",
+    "name": "wcb-nat"
+  },
+  "reference": {
+    "commit": "897990524040878e5cdc1ad70c2a79cfc4772fdd",
+    "repository": "https://github.com/2409324124/windows-powershell-benchmark-poc"
+  },
+  "schema": "wcb.environment-lock/v1",
+  "session_defaults": {
+    "agent_timeout_seconds": 300,
+    "auth_in_base": false,
+    "evaluator_injected_after_agent_exit": true,
+    "evaluator_location": "host",
+    "opencode_agent": "bench",
+    "opencode_model": "openai/gpt-5.6-luna",
+    "opencode_variant": "medium",
+    "user": "Administrator"
+  },
+  "tools_media": {
+    "git": {
+      "bytes": 65343712,
+      "path": "/mnt/PM983/windows-benchmark/iso/tools/Git-2.55.0.5-64-bit.exe",
+      "sha256": "d065a4e23c3d9a6b5073d609b5be0830227ec3ca053c083ba385061ddfaf94c6"
+    },
+    "opencode": {
+      "bytes": 60622013,
+      "path": "/mnt/PM983/windows-benchmark/iso/tools/opencode-windows-x64.zip",
+      "sha256": "f8cc5477f478fa129ece99b550d508363ceff612f99d859042e526b13b951542"
+    },
+    "powershell": {
+      "bytes": 115515392,
+      "path": "/mnt/PM983/windows-benchmark/iso/tools/PowerShell-7.6.4-win-x64.msi",
+      "sha256": "d11942df52fd12470169797abfa4781d9480efdc81000ba4fa55a5b921ed8dd0"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "schema": "wcb.guest-lock-facts/v1",
+  "computer_name": "WIN-LFQUF0PCQ3C",
+  "product_name": "Windows Server 2025 Standard Evaluation",
+  "edition_id": "ServerStandardEval",
+  "display_version": "24H2",
+  "build": "26100",
+  "os_version": "10.0.26100",
+  "install_date": "2026-08-25T01:24:11.0000000Z",
+  "last_boot": "2026-08-24T10:03:56.0814640Z",
+  "manufacturer": "QEMU",
+  "model": "Ubuntu 24.04 PC (Q35 + ICH9, 2009)",
+  "timezone": "UTC",
+  "culture": "en-US",
+  "ui_culture": "en-US",
+  "opencode": {
+    "version": "1.18.21",
+    "exe_sha256": "ea4f4d4bec95cd41baf0fc53adc4e34b31e1c8676dc5b2507c8797ab1884af18",
+    "config_sha256": "bb65d6efde403df521ddc1f15be0deb92ef8e6c132cfb55074f85b6b94b446b5",
+    "auth_present": false
+  },
+  "powershell": {
+    "windows": "5.1.26100.1591",
+    "pwsh": "7.6.4",
+    "exe_sha256": "db6dd81183fe57d22e03b911ec9a30a2fd7c40542e97743615355a6fb44f458f",
+    "profiles_present": false
+  },
+  "git": {
+    "version": "git version 2.55.0.windows.5",
+    "exe_sha256": "78211c7ed73988da93a6d8a33d47ec6187f464d7ea2a9a00c182bbd7a1ecf30f"
+  },
+  "services": {
+    "sshd": "Running",
+    "qemu_ga": "Running",
+    "windows_update": "Stopped"
+  },
+  "update_policy": {
+    "no_auto_update": 1,
+    "au_options": 1
+  },
+  "network": {
+    "adapter": "Ethernet",
+    "mac": "52-54-00-9F-F6-3E",
+    "ipv4": "192.168.122.245"
+  },
+  "license": {
+    "status": 2,
+    "grace_minutes": 14221
+  },
+  "hotfixes": ["KB5042098", "KB5043080", "KB5043113"]
+}

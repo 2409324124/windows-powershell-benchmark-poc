@@ -1,0 +1,24 @@
+schema: wcb.benchmark/v1
+guest:
+  build_domain: ws2025-base-build-v001
+  address: 192.168.122.245
+  user: Administrator
+  ssh_key: /mnt/PM983/windows-benchmark/config/keys/wcb-evaluator-ed25519
+  known_hosts: /home/miku/runtime-topo-windows/config/known_hosts
+storage:
+  root: /mnt/PM983/windows-benchmark
+  base: /mnt/PM983/windows-benchmark/base/ws2025-opencode-1.18.21-v001.qcow2
+  overlays: /mnt/PM983/windows-benchmark/overlays
+  runs: /mnt/PM983/windows-benchmark/runs
+runtime:
+  ssh_timeout_seconds: 120
+  agent_timeout_seconds: 300
+  keep_on_failure: false
+opencode:
+  executable: 'C:\Program Files\OpenCode\1.18.21\opencode.exe'
+  model: openai/gpt-5.6-luna
+  variant: medium
+  agent: bench
+  version: 1.18.21
+task: ps002-path-quoting
+
