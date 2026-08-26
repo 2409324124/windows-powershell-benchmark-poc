@@ -67,10 +67,10 @@ def _capture_workspace_snapshot(
     workspace: str,
     run_id: str,
 ) -> bytes:
-    archive = rf'C:\WCB\runs\{run_id}\workspace-after-agent.zip'
+    archive_name = f'wcb-{run_id}-workspace-after-agent.zip'
     script = rf"""
 $workspace = '{workspace.replace("'", "''")}'
-$archive = '{archive}'
+$archive = Join-Path $env:TEMP '{archive_name}'
 if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {{
     throw 'task workspace is missing before snapshot'
 }}

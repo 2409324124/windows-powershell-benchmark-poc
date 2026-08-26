@@ -23,7 +23,7 @@ from runner.opencode import (
     _control_powershell,
     encoded_powershell,
 )
-from runner.real_canary import run
+from runner.real_canary import _capture_workspace_snapshot, run
 from runner.report import JsonlLog, write_bytes_atomic
 from runner.vm import ScreenshotMonitor, VisualModeError, require_visual_domain
 
@@ -654,6 +654,21 @@ class CanaryOutputTests(unittest.TestCase):
             },
             'runtime': {'agent_timeout_seconds': timeout},
         }
+
+    def test_workspace_snapshot_uses_temp_outside_cleaned_launcher_staging(self) -> None:
+        target = Mock()
+        target.upload_bytes.return_value = subprocess.CompletedProcess([], 0, b'', b'')
+        target.run.return_value = subprocess.CompletedProcess([], 0, b'emlw\n', b'')
+
+        snapshot = _capture_workspace_snapshot(
+            target, r'C:\WCB\tasks\PS005 Transactional Deploy',
+            'opencode-ps005-example',
+        )
+
+        self.assertEqual(snapshot, b'zip')
+        script = decode_uploaded_control(target)
+        self.assertIn("Join-Path $env:TEMP 'wcb-opencode-ps005-example-workspace-after-agent.zip'", script)
+        self.assertNotIn(r'C:\WCB\runs\opencode-ps005-example', script)
 
     def test_control_user_and_interactive_desktop_user_are_separate(self) -> None:
         config = self.config(0)
