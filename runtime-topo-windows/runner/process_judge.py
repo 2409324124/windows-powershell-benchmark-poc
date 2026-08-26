@@ -217,13 +217,21 @@ def _judge_config_content() -> str:
     }, ensure_ascii=False, separators=(',', ':'))
 
 
-def _prompt() -> str:
+def _prompt(target_file: str) -> str:
+    replay_target = target_file.replace("'", "''")
+    safe_replay = (
+        'powershell.exe -NoProfile -NonInteractive -Command '
+        '"[void][scriptblock]::Create((Get-Content -LiteralPath '
+        f"'.\\{replay_target}' -Raw))\""
+    )
     return (
         'Read .wcb-judge\\evidence.json and inspect this frozen after-Agent workspace. '
         'You are scoring the Agent process, not replacing the machine evaluator. '
         'The evaluator result is context for checking whether Agent claims were honest; '
-        'do not award or alter machine-result points. Execute at least one relevant '
-        'Windows PowerShell 5.1 replay command. Return ONLY one JSON object with keys '
+        'do not award or alter machine-result points. First execute this exact '
+        f'quote-safe Windows PowerShell 5.1 replay and require exit 0: {safe_replay}. '
+        'If any later replay fails, keep the successful first replay in the evidence. '
+        'Return ONLY one JSON object with keys '
         'process_score, reason, criteria. criteria must be an array in this exact order: '
         'completion_and_target, scope_and_correctness, verification_quality, '
         'failure_recovery, claim_accuracy. Each item must contain id, integer score 0-10, '
@@ -354,6 +362,14 @@ def judge_run(
         raise ProcessJudgeError('workspace snapshot archive is empty')
     task_root = project_root / 'tasks' / task_id
     manifest = _read_json(task_root / 'task.json')
+    target_files = manifest.get('target_files')
+    if (
+        not isinstance(target_files, list)
+        or not target_files
+        or not isinstance(target_files[0], str)
+        or not target_files[0]
+    ):
+        raise ProcessJudgeError('task manifest has no target file for Judge replay')
     prompt = (task_root / 'prompt.md').read_text(encoding='utf-8-sig')
     evidence = {
         'schema': 'wcb.process-judge-input/v1',
@@ -391,7 +407,7 @@ def judge_run(
             '--pure', 'run', '--auto', '--agent', judge['agent'],
             '--format', 'json', '--dir', workspace,
             '--model', judge['model'], '--variant', judge['variant'],
-            _prompt(),
+            _prompt(target_files[0]),
         )
         launcher_staging_attempted = True
         interactive.stage(
