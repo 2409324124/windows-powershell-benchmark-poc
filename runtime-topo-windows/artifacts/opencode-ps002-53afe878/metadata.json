@@ -1,0 +1,12 @@
+{
+  "agent_exit": 124,
+  "base_sha256": "e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4",
+  "domain": "wcb-canary-transport-001",
+  "finished_at": "2026-08-24T15:21:40.628Z",
+  "model": "opencode-go/gpt-5.6-luna",
+  "passed": true,
+  "run_id": "opencode-ps002-53afe878",
+  "schema": "wcb.run-metadata/v1",
+  "task": "ps002-path-quoting",
+  "variant": "medium"
+}

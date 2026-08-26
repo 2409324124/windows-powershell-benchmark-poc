@@ -32,6 +32,7 @@
   - The OpenCode CLI did not exit before the 300-second supervisor deadline, so `agent_exit=124` even though the task result scored 1.
   - No canary OpenCode process remained after timeout. The only remaining OpenCode process was the user's interactive Explorer-launched session.
   - Run ID: `opencode-ps002-53afe878`.
+  - Selected raw logs and the preceding `EUNKNOWN` transport errors are published in [`artifacts/`](artifacts/).
 - Earlier provider/transport attempts failed before any task change: zero credentials, wrong `openai/` provider prefix, and inherited SSH PTY stdin causing `EUNKNOWN: unknown error, read`.
 
 ## Intentional deviations / recorded risk

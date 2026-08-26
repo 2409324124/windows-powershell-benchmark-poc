@@ -25,6 +25,7 @@ e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
 
 - 当前实施状态：[`runtime-topo-windows/STATUS.md`](runtime-topo-windows/STATUS.md)
 - 可审计环境锁：[`runtime-topo-windows/environment-lock.json`](runtime-topo-windows/environment-lock.json)
+- 公开运行日志：[`runtime-topo-windows/artifacts/`](runtime-topo-windows/artifacts/)
 - 部署与 shell 失败案例：[`runtime-topo-windows/docs/shell-command-lessons.md`](runtime-topo-windows/docs/shell-command-lessons.md)
 - 正式 benchmark 模板保持 headless；登录 overlay 为安装和认证临时开启 SPICE 剪贴板及文件传输。
 
