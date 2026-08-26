@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Sequence
+from typing import BinaryIO, Callable, Sequence
 
 
 @dataclass(frozen=True)
@@ -24,12 +24,41 @@ class SshTarget:
             ]),
         ]
 
-    def run(self, command: str, *, timeout: int, stdin: BinaryIO | None = None) -> subprocess.CompletedProcess[bytes]:
+    def run(
+        self,
+        command: str,
+        *,
+        timeout: int,
+        stdin: BinaryIO | None = None,
+        on_timeout: Callable[[subprocess.TimeoutExpired], None] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
         invocation = self.base()
         invocation[-1] += " " + subprocess.list2cmdline([command])
-        if stdin is None:
-            return subprocess.run(invocation, input=b"", capture_output=True, timeout=timeout, check=False)
-        return subprocess.run(invocation, stdin=stdin, capture_output=True, timeout=timeout, check=False)
+        if on_timeout is None:
+            if stdin is None:
+                return subprocess.run(invocation, input=b"", capture_output=True, timeout=timeout, check=False)
+            return subprocess.run(invocation, stdin=stdin, capture_output=True, timeout=timeout, check=False)
+
+        process_stdin = subprocess.PIPE if stdin is None else stdin
+        with subprocess.Popen(
+            invocation, stdin=process_stdin,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ) as process:
+            try:
+                stdout, stderr = process.communicate(
+                    input=b"" if stdin is None else None,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired as error:
+                try:
+                    on_timeout(error)
+                finally:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                raise subprocess.TimeoutExpired(
+                    error.cmd, error.timeout, output=stdout, stderr=stderr,
+                ) from None
+        return subprocess.CompletedProcess(invocation, process.returncode, stdout, stderr)
 
 
 def encoded_powershell(script: str, *, executable: str = "powershell.exe") -> str:
