@@ -8,7 +8,8 @@ from pathlib import Path
 
 import yaml
 
-from runner.opencode import SshTarget, encoded_powershell
+from runner.evaluator_replay import EvaluatorReplayError, replay_run
+from runner.opencode import InteractiveAgentError, SshTarget, encoded_powershell
 from runner.model_smoke import run as run_model_smoke
 from runner.matrix import run as run_matrix
 from runner.process_judge import ProcessJudgeError, judge_root
@@ -70,7 +71,7 @@ def main() -> int:
         "command",
         choices=(
             "transport-canary", "opencode-canary", "model-smoke",
-            "process-judge", "score", "matrix",
+            "process-judge", "score", "matrix", "evaluator-replay",
         ),
     )
     parser.add_argument("--config", type=Path, default=ROOT / "benchmark.yaml")
@@ -110,6 +111,22 @@ def main() -> int:
             config, ROOT, args.matrix, args.output,
             visual=args.visual, resume=args.resume, dry_run=args.dry_run,
         )
+    if args.command == "evaluator-replay":
+        if args.output is None:
+            parser.error("evaluator-replay requires --output ROOT")
+        if args.run_id is None:
+            parser.error("evaluator-replay requires --run-id ID")
+        config = load_config(args.config)
+        try:
+            report = replay_run(config, ROOT, args.output, args.run_id)
+        except (
+            EvaluatorReplayError, InteractiveAgentError, KeyError,
+            OSError, TypeError, ValueError,
+        ) as error:
+            print(f"Unable to replay evaluator: {error}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, ensure_ascii=False, separators=(",", ":")))
+        return 0
     if args.command == "score":
         if args.output is None:
             parser.error("score requires --output ROOT")

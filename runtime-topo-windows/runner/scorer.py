@@ -676,6 +676,31 @@ def score_run(
             run_started, agent_started, agent_finished,
             evaluation_event, run_finished,
         )
+        machine_evaluation = evaluation
+        result_source = 'evaluator.json'
+        replay_path = run_dir / 'evaluator-replay.json'
+        if replay_path.exists():
+            if metadata.get('evidence_schema') != 'wcb.run-evidence/v3':
+                raise EvidenceError('evaluator replay requires v3 frozen workspace evidence')
+            replay = _read_json(replay_path)
+            expected_replay = {
+                'schema': 'wcb.evaluator-replay/v1',
+                'run_id': run_dir.name,
+                'task': task_id,
+                'workspace_snapshot': 'workspace-after-agent.zip',
+                'evaluator': f'tasks/{task_id}/evaluate.ps1',
+            }
+            for field, expected in expected_replay.items():
+                if replay.get(field) != expected:
+                    raise EvidenceError(f'evaluator replay {field} is invalid')
+            replay_result = replay.get('result')
+            replay_exit = replay.get('exit_code')
+            if not isinstance(replay_result, dict) or type(replay_result.get('passed')) is not bool:
+                raise EvidenceError('evaluator replay result is invalid')
+            if type(replay_exit) is not int or (replay_exit == 0) != replay_result['passed']:
+                raise EvidenceError('evaluator replay exit contradicts passed flag')
+            machine_evaluation = replay_result
+            result_source = 'evaluator-replay.json'
         _validate_visual_identity(
             run_dir, metadata, task_manifest,
             run_started, agent_started, agent_records,
@@ -720,7 +745,8 @@ def score_run(
                 raise EvidenceError(
                     'workspace snapshot was not captured after Agent and before evaluator'
                 )
-        result = _result_score(task_manifest, evaluation)
+        result = _result_score(task_manifest, machine_evaluation)
+        result['evidence_source'] = result_source
         process = _process_judge_result(
             run_dir, judge,
             task_prompt=task_prompt,

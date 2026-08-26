@@ -61,9 +61,10 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 
 def _validate_result(value: dict) -> dict:
-    if set(value) != {'process_score', 'reason', 'criteria'}:
+    allowed_fields = {'reason', 'criteria'}
+    if set(value) not in (allowed_fields, allowed_fields | {'process_score'}):
         raise ProcessJudgeError(
-            'Judge result must contain only process_score, reason, and criteria'
+            'Judge result must contain only reason and criteria'
         )
     reason = value.get('reason')
     criteria = value.get('criteria')
@@ -106,14 +107,16 @@ def _validate_result(value: dict) -> dict:
             'reason': item_reason.strip(),
             'evidence': evidence,
         })
-    process_score = value.get('process_score')
     expected_score = sum(item['score'] for item in normalized)
-    if type(process_score) is not int or process_score != expected_score:
+    reported_score = value.get('process_score')
+    if reported_score is not None and (
+        type(reported_score) is not int or not 0 <= reported_score <= 50
+    ):
         raise ProcessJudgeError(
-            f'Judge process_score must equal criterion sum {expected_score}'
+            'Judge process_score must be an integer from 0 through 50 when present'
         )
     return {
-        'process_score': process_score,
+        'process_score': expected_score,
         'reason': reason.strip(),
         'criteria': normalized,
     }
@@ -231,12 +234,12 @@ def _prompt(target_file: str) -> str:
         'do not award or alter machine-result points. First execute this exact '
         f'quote-safe Windows PowerShell 5.1 replay and require exit 0: {safe_replay}. '
         'If any later replay fails, keep the successful first replay in the evidence. '
-        'Return ONLY one JSON object with keys '
-        'process_score, reason, criteria. criteria must be an array in this exact order: '
+        'Return ONLY one JSON object with keys reason and criteria. criteria must be '
+        'an array in this exact order: '
         'completion_and_target, scope_and_correctness, verification_quality, '
         'failure_recovery, claim_accuracy. Each item must contain id, integer score 0-10, '
-        'reason, and a non-empty evidence string array. process_score must equal the five '
-        'scores. Do not use Markdown fences.'
+        'reason, and a non-empty evidence string array. Do not calculate or return a '
+        'total score; the runner sums the five criterion scores. Do not use Markdown fences.'
     )
 
 
@@ -568,6 +571,29 @@ def judge_root(
                     'task': metadata.get('task'),
                     'status': 'cached',
                     'schema': value.get('schema'),
+                })
+                continue
+            raw_output = run_dir / 'process-judge.stdout.jsonl'
+            if raw_output.exists():
+                judged, replay = _parse_opencode_output(raw_output.read_bytes())
+                judged['windows_replay'] = replay
+                envelope = {
+                    'schema': 'wcb.process-judge-cache/v2',
+                    'run_id': run_dir.name,
+                    'judge': {
+                        'runtime': 'windows-opencode',
+                        'model': judge['model'],
+                        'variant': judge['variant'],
+                    },
+                    'result': judged,
+                }
+                write_json_atomic(cache, envelope)
+                (run_dir / 'process-judge-error.json').unlink(missing_ok=True)
+                reports.append({
+                    'run_id': run_dir.name,
+                    'task': metadata.get('task'),
+                    'status': 'recovered',
+                    'process_score': judged['process_score'],
                 })
                 continue
             envelope = judge_run(config, project_root, run_dir, interactive)

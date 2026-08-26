@@ -263,7 +263,7 @@ $processes = @(
   }
 )
 $staging = @()
-foreach ($root in @('C:\WCB\runs','C:\WCB\judge-runs','C:\WCB\model-smokes')) {
+foreach ($root in @('C:\WCB\runs','C:\WCB\judge-runs','C:\WCB\model-smokes','C:\WCB\evaluator-replays')) {
   if (Test-Path -LiteralPath $root -PathType Container) {
     $staging += @(Get-ChildItem -LiteralPath $root -Directory -Force | ForEach-Object FullName)
   }
@@ -396,8 +396,6 @@ def _recover_cell(cell: dict, output_root: Path) -> None:
         cell['phase'] = 'agent_complete'
         phase = cell['phase']
     if phase == 'judging':
-        if (run_dir / 'process-judge-error.json').exists():
-            raise MatrixError(f'{cell["run_id"]} has a recorded Judge failure')
         cell['phase'] = (
             'judged' if (run_dir / 'process-judge.json').is_file()
             else 'agent_complete'

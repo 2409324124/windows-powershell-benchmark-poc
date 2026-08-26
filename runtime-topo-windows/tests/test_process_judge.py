@@ -151,7 +151,7 @@ class OpenCodeJudgeOutputTests(unittest.TestCase):
         with self.assertRaisesRegex(ProcessJudgeError, 'successful Windows PowerShell'):
             _parse_opencode_output(output)
 
-    def test_rejects_criterion_sum_contradiction(self) -> None:
+    def test_derives_total_from_criteria_when_reported_total_is_wrong(self) -> None:
         value = judge_result()
         value['process_score'] = 49
         output = jsonl(
@@ -168,8 +168,8 @@ class OpenCodeJudgeOutputTests(unittest.TestCase):
             },
             {'type': 'text', 'part': {'text': json.dumps(value)}},
         )
-        with self.assertRaisesRegex(ProcessJudgeError, 'criterion sum 50'):
-            _parse_opencode_output(output)
+        result, _ = _parse_opencode_output(output)
+        self.assertEqual(result['process_score'], 50)
 
     def test_inline_agent_config_is_read_only_and_local(self) -> None:
         config = json.loads(_judge_config_content())
