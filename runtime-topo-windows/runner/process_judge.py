@@ -479,6 +479,7 @@ def judge_root(
     output_root: Path,
     *,
     task_id: str | None = None,
+    run_id: str | None = None,
 ) -> list[dict]:
     if not output_root.is_dir():
         raise ProcessJudgeError(f'run output root does not exist: {output_root}')
@@ -506,11 +507,24 @@ def judge_root(
     interactive = InteractiveOpenCode(
         target, guest.get('interactive_user', guest['user']), launcher,
     )
+    if run_id is not None:
+        if (
+            not isinstance(run_id, str)
+            or Path(run_id).name != run_id
+            or not run_id.startswith('opencode-')
+        ):
+            raise ProcessJudgeError(f'invalid run id: {run_id!r}')
+        selected = output_root / run_id
+        if not selected.is_dir():
+            raise ProcessJudgeError(f'run id does not exist: {run_id}')
+        run_dirs = [selected]
+    else:
+        run_dirs = sorted(
+            path for path in output_root.iterdir()
+            if path.is_dir() and path.name.startswith('opencode-')
+        )
     reports = []
-    for run_dir in sorted(
-        path for path in output_root.iterdir()
-        if path.is_dir() and path.name.startswith('opencode-')
-    ):
+    for run_dir in run_dirs:
         try:
             metadata = _read_json(run_dir / 'metadata.json')
             if task_id is not None and metadata.get('task') != task_id:

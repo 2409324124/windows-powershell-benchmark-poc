@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import ntpath
+import re
 import subprocess
 import tempfile
 from datetime import datetime
@@ -497,6 +498,14 @@ def _validate_visual_identity(
         or agent_started.get('variant') != metadata.get('variant')
     ):
         raise EvidenceError('agent_started model/variant contradicts metadata')
+    variant_explicit = metadata.get('variant_explicit', True)
+    if type(variant_explicit) is not bool:
+        raise EvidenceError('metadata variant_explicit must be boolean')
+    if 'variant_explicit' in agent_started:
+        if agent_started.get('variant_explicit') is not variant_explicit:
+            raise EvidenceError(
+                'agent_started variant_explicit contradicts metadata'
+            )
     compared_fields = (
         'run_id', 'wrapper_pid', 'pid', 'parent_pid', 'session_id',
         'console_session_id', 'username', 'executable', 'command_line',
@@ -518,8 +527,20 @@ def _validate_visual_identity(
     )):
         raise EvidenceError('visual metadata command-line evidence is incomplete')
     command_folded = command_line.casefold()
-    if any(value.casefold() not in command_folded for value in (workspace, model, variant)):
-        raise EvidenceError('interactive command line contradicts metadata model/variant/workspace')
+    if any(value.casefold() not in command_folded for value in (workspace, model)):
+        raise EvidenceError('interactive command line contradicts metadata model/workspace')
+    has_variant_flag = re.search(
+        r'(?i)(?:^|\s)--variant(?:\s|=)', command_line,
+    ) is not None
+    if variant_explicit:
+        if not has_variant_flag or variant.casefold() not in command_folded:
+            raise EvidenceError(
+                'interactive command line contradicts explicit metadata variant'
+            )
+    elif variant != 'provider-default' or has_variant_flag:
+        raise EvidenceError(
+            'interactive command line contradicts provider-default variant metadata'
+        )
 
 
 def _duration_seconds(started: dict, finished: dict) -> float:
@@ -764,12 +785,28 @@ def score_root(
     judge: ProcessJudge | None = None,
     *,
     task_id: str | None = None,
+    run_id: str | None = None,
 ) -> list[dict]:
+    if not output_root.is_dir():
+        raise EvidenceError(f'run output root does not exist: {output_root}')
+    if run_id is not None:
+        if (
+            not isinstance(run_id, str)
+            or Path(run_id).name != run_id
+            or not run_id.startswith('opencode-')
+        ):
+            raise EvidenceError(f'invalid run id: {run_id!r}')
+        selected = output_root / run_id
+        if not selected.is_dir():
+            raise EvidenceError(f'run id does not exist: {run_id}')
+        run_dirs = [selected]
+    else:
+        run_dirs = sorted(
+            path for path in output_root.iterdir()
+            if path.is_dir() and path.name.startswith('opencode-')
+        )
     reports = []
-    for run_dir in sorted(
-        path for path in output_root.iterdir()
-        if path.is_dir() and path.name.startswith('opencode-')
-    ):
+    for run_dir in run_dirs:
         metadata_path = run_dir / 'metadata.json'
         if not metadata_path.exists():
             if task_id is None and any((run_dir / name).exists() for name in (
@@ -794,8 +831,27 @@ def score_root(
             report = _infra(run_dir, metadata.get('task'), [str(error)], metadata)
         write_json_atomic(run_dir / 'score.json', report)
         reports.append(report)
+    report_runs = reports
+    if run_id is not None:
+        merged = {}
+        for child in sorted(
+            path for path in output_root.iterdir()
+            if path.is_dir() and path.name.startswith('opencode-')
+        ):
+            score_path = child / 'score.json'
+            if not score_path.is_file():
+                continue
+            try:
+                existing = _read_json(score_path)
+            except EvidenceError:
+                continue
+            if existing.get('run_id') == child.name:
+                merged[child.name] = existing
+        for report in reports:
+            merged[report['run_id']] = report
+        report_runs = [merged[key] for key in sorted(merged)]
     write_json_atomic(output_root / 'score-report.json', {
         'schema': 'wcb.score-report/v2',
-        'runs': reports,
+        'runs': report_runs,
     })
     return reports

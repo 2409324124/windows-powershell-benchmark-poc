@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 from runner.process_judge import (
@@ -11,6 +13,7 @@ from runner.process_judge import (
     _judge_config_content,
     _parse_opencode_output,
     _stage_bundle,
+    judge_root,
 )
 
 
@@ -36,6 +39,52 @@ def jsonl(*events: dict) -> bytes:
 
 
 class OpenCodeJudgeOutputTests(unittest.TestCase):
+    @staticmethod
+    def config() -> dict:
+        return {
+            'guest': {
+                'address': 'guest', 'user': 'Administrator',
+                'ssh_key': '/tmp/key', 'known_hosts': '/tmp/known-hosts',
+                'interactive_user': 'benchmark',
+            },
+            'judge': {
+                'executable': r'C:\OpenCode\opencode.exe',
+                'model': 'opencode-go/gpt-5.6-luna',
+                'variant': 'low', 'agent': 'judge',
+                'timeout_seconds': 180,
+            },
+        }
+
+    def test_run_id_rejects_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            project = Path(__file__).resolve().parents[1]
+            with self.assertRaisesRegex(ProcessJudgeError, 'invalid run id'):
+                judge_root(
+                    self.config(), project, output,
+                    run_id='../opencode-escape',
+                )
+
+    def test_run_id_metadata_mismatch_is_infrastructure_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            run_dir = output / 'opencode-ps001-example'
+            run_dir.mkdir()
+            (run_dir / 'metadata.json').write_text(json.dumps({
+                'run_id': 'opencode-ps001-other',
+                'task': 'ps001-utf8-output',
+                'evidence_schema': 'wcb.run-evidence/v3',
+            }), encoding='utf-8')
+            project = Path(__file__).resolve().parents[1]
+
+            reports = judge_root(
+                self.config(), project, output, run_id=run_dir.name,
+            )
+
+            self.assertEqual(len(reports), 1)
+            self.assertEqual(reports[0]['status'], 'infrastructure_failure')
+            self.assertIn('metadata run_id contradicts', reports[0]['error'])
+
     def test_staging_grants_modify_but_keeps_judge_evidence_read_only(self) -> None:
         target = Mock()
         target.upload_bytes.return_value = subprocess.CompletedProcess(

@@ -186,11 +186,21 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     executable = config['opencode']['executable']
     model = config['opencode']['model']
     variant = config['opencode']['variant']
+    variant_explicit = config['opencode'].get('variant_explicit', True)
+    if type(variant_explicit) is not bool:
+        print('opencode.variant_explicit must be boolean', file=sys.stderr)
+        return 2
+    if not variant_explicit and variant != 'provider-default':
+        print('implicit OpenCode variant must be provider-default', file=sys.stderr)
+        return 2
     agent = config['opencode']['agent']
-    arguments = (
+    arguments = [
         '--pure', 'run', '--auto', '--agent', agent, '--format', 'json',
-        '--dir', workspace, '--model', model, '--variant', variant, prompt,
-    )
+        '--dir', workspace, '--model', model,
+    ]
+    if variant_explicit:
+        arguments.extend(('--variant', variant))
+    arguments.append(prompt)
     stdout_path = run_dir / 'opencode.stdout.jsonl'
     stderr_path = run_dir / 'opencode.stderr.log'
     auth_stdout_path = run_dir / 'opencode.auth.stdout.log'
@@ -236,7 +246,7 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     try:
         staging_attempted = True
         interactive.stage(
-            run_id, executable=executable, arguments=arguments,
+            run_id, executable=executable, arguments=tuple(arguments),
             workspace=workspace, expected_session_id=console.session_id,
         )
         staged = True
@@ -250,9 +260,17 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         if process.executable.casefold() != executable.casefold():
             raise InteractiveAgentError(f'unexpected interactive executable: {process.executable}')
         command_line_folded = process.command_line.casefold()
-        for expected in (workspace, model, variant, agent):
+        for expected in (workspace, model, agent):
             if expected.casefold() not in command_line_folded:
                 raise InteractiveAgentError(f'interactive command line is missing expected value: {expected}')
+        if variant_explicit and variant.casefold() not in command_line_folded:
+            raise InteractiveAgentError(
+                f'interactive command line is missing expected variant: {variant}'
+            )
+        if not variant_explicit and '--variant' in command_line_folded:
+            raise InteractiveAgentError(
+                'interactive command line unexpectedly contains --variant'
+            )
         interactive.mark_running(process)
         collect_auth_best_effort()
         orchestrator.emit('auth_checked', interactive=True, passed=True)
@@ -275,7 +293,8 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         write_json_atomic(run_dir / 'interactive-process.json', process_evidence)
         agent_log.emit('interactive_process_started', **process_evidence)
         orchestrator.emit(
-            'agent_started', model=model, variant=variant, executable=executable,
+            'agent_started', model=model, variant=variant,
+            variant_explicit=variant_explicit, executable=executable,
             pid=process.pid, session_id=process.session_id, task_name=process.task_name,
             automatic=True, input_channel='none',
         )
@@ -409,7 +428,8 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         'schema': 'wcb.run-metadata/v1', 'run_id': run_id, 'task': task_id,
         'evidence_schema': 'wcb.run-evidence/v3',
         'domain': domain, 'base_sha256': 'e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4',
-        'model': model, 'variant': variant, 'agent_exit': agent_exit,
+        'model': model, 'variant': variant,
+        'variant_explicit': variant_explicit, 'agent_exit': agent_exit,
         'workspace': workspace,
         'workspace_snapshot': 'workspace-after-agent.zip' if snapshot_complete else None,
         'timed_out': timed_out, 'evaluator_exit': evaluation.returncode,

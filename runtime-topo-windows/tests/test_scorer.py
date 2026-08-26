@@ -550,6 +550,63 @@ class ScoreRunTests(unittest.TestCase):
 
             self.assertEqual(result['status'], 'passed')
 
+    def test_visual_provider_default_requires_variant_flag_to_be_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = make_complete_run(Path(temporary))
+            metadata = json.loads((run_dir / 'metadata.json').read_text())
+            metadata.update({
+                'model': 'opencode-go/mimo-v2.5',
+                'variant': 'provider-default',
+                'variant_explicit': False,
+            })
+            write_json(run_dir / 'metadata.json', metadata)
+            orchestrator = [json.loads(line) for line in (
+                run_dir / 'orchestrator.jsonl'
+            ).read_text().splitlines()]
+            orchestrator[0].update({'visual': True, 'console_session_id': 1})
+            orchestrator[1].update({
+                'pid': 701, 'session_id': 1,
+                'model': metadata['model'], 'variant': metadata['variant'],
+                'variant_explicit': False,
+            })
+            write_jsonl(run_dir / 'orchestrator.jsonl', orchestrator)
+            identity = {
+                'schema': 'wcb.interactive-process/v1',
+                'run_id': run_dir.name,
+                'wrapper_pid': 700, 'pid': 701, 'parent_pid': 700,
+                'session_id': 1, 'console_session_id': 1,
+                'username': r'HOST\benchmark',
+                'executable': r'C:\Program Files\OpenCode\opencode.exe',
+                'command_line': (
+                    f'opencode.exe --dir "{metadata["workspace"]}" '
+                    f'--model {metadata["model"]}'
+                ),
+            }
+            write_json(run_dir / 'interactive-process.json', identity)
+            agent_records = [json.loads(line) for line in (
+                run_dir / 'agent.jsonl'
+            ).read_text().splitlines()]
+            agent_records.insert(0, {
+                'event': 'interactive_process_started', **identity,
+            })
+            write_jsonl(run_dir / 'agent.jsonl', agent_records)
+
+            result = score(run_dir, manifest('first', 'second'))
+            self.assertEqual(result['status'], 'passed')
+
+            identity['command_line'] += ' --variant low'
+            write_json(run_dir / 'interactive-process.json', identity)
+            agent_records[0] = {
+                'event': 'interactive_process_started', **identity,
+            }
+            write_jsonl(run_dir / 'agent.jsonl', agent_records)
+            rejected = score(run_dir, manifest('first', 'second'))
+            self.assertEqual(rejected['status'], 'infrastructure_failure')
+            self.assertTrue(any(
+                'provider-default variant metadata' in error
+                for error in rejected['errors']
+            ))
+
     def test_visual_v1_metadata_without_workspace_can_still_be_scored(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = make_complete_run(Path(temporary))
@@ -710,6 +767,51 @@ class ScoreRunTests(unittest.TestCase):
 
 
 class ScoreRootTests(unittest.TestCase):
+    def test_run_id_scores_only_selected_run_and_merges_root_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / 'project'
+            task_dir = project / 'tasks' / TASK_ID
+            task_dir.mkdir(parents=True)
+            write_json(task_dir / 'task.json', manifest('first', 'second'))
+            (task_dir / 'prompt.md').write_text(TASK_PROMPT, encoding='utf-8')
+            first = make_complete_run(
+                root / 'runs', run_id='opencode-ps999-first',
+            )
+            second = make_complete_run(
+                root / 'runs', run_id='opencode-ps999-second',
+            )
+
+            first_reports = score_root(
+                root / 'runs', project, FakeJudge(), run_id=first.name,
+            )
+            self.assertEqual(
+                [item['run_id'] for item in first_reports], [first.name],
+            )
+            self.assertFalse((second / 'score.json').exists())
+            score_root(
+                root / 'runs', project, FakeJudge(40), run_id=second.name,
+            )
+            root_report = json.loads(
+                (root / 'runs' / 'score-report.json').read_text(encoding='utf-8')
+            )
+            self.assertEqual(
+                [item['run_id'] for item in root_report['runs']],
+                [first.name, second.name],
+            )
+            self.assertEqual(root_report['runs'][0]['score'], 100)
+            self.assertEqual(root_report['runs'][1]['score'], 90)
+
+    def test_run_id_rejects_traversal_and_missing_direct_child(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runs = root / 'runs'
+            runs.mkdir()
+            with self.assertRaisesRegex(EvidenceError, 'invalid run id'):
+                score_root(runs, root, FakeJudge(), run_id='../opencode-escape')
+            with self.assertRaisesRegex(EvidenceError, 'does not exist'):
+                score_root(runs, root, FakeJudge(), run_id='opencode-missing')
+
     def test_scores_independently_and_root_report_has_no_aggregate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
