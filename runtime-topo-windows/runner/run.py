@@ -10,6 +10,7 @@ import yaml
 
 from runner.evaluator_replay import EvaluatorReplayError, replay_run
 from runner.opencode import InteractiveAgentError, SshTarget, encoded_powershell
+from runner.output_recovery import OutputRecoveryError, recover_run
 from runner.model_smoke import run as run_model_smoke
 from runner.matrix import run as run_matrix
 from runner.process_judge import ProcessJudgeError, judge_root
@@ -72,6 +73,7 @@ def main() -> int:
         choices=(
             "transport-canary", "opencode-canary", "model-smoke",
             "process-judge", "score", "matrix", "evaluator-replay",
+            "output-recovery",
         ),
     )
     parser.add_argument("--config", type=Path, default=ROOT / "benchmark.yaml")
@@ -124,6 +126,22 @@ def main() -> int:
             OSError, TypeError, ValueError,
         ) as error:
             print(f"Unable to replay evaluator: {error}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, ensure_ascii=False, separators=(",", ":")))
+        return 0
+    if args.command == "output-recovery":
+        if args.output is None:
+            parser.error("output-recovery requires --output ROOT")
+        if args.run_id is None:
+            parser.error("output-recovery requires --run-id ID")
+        config = load_config(args.config)
+        try:
+            report = recover_run(config, args.output, args.run_id)
+        except (
+            OutputRecoveryError, InteractiveAgentError, KeyError,
+            OSError, TypeError, ValueError,
+        ) as error:
+            print(f"Unable to recover Agent output: {error}", file=sys.stderr)
             return 2
         print(json.dumps(report, ensure_ascii=False, separators=(",", ":")))
         return 0

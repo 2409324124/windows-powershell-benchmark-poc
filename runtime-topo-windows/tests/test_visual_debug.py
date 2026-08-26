@@ -854,7 +854,10 @@ class CanaryOutputTests(unittest.TestCase):
             self.assertTrue((run_dir / 'evaluator.jsonl').is_file())
         self.assertEqual(
             trace,
-            ['timeout_screenshot', 'collect_output', 'timeout_event', 'terminate'],
+            [
+                'timeout_screenshot', 'collect_output', 'timeout_event',
+                'terminate', 'collect_output',
+            ],
         )
 
     def test_ssh_never_directly_launches_opencode(self) -> None:

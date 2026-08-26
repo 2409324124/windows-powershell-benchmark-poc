@@ -255,6 +255,8 @@ def run(
 
     def collect_agent_best_effort() -> None:
         nonlocal raw_stdout_bytes, raw_stderr_bytes, agent_output_collected
+        if agent_output_collected:
+            return
         try:
             raw_stdout_bytes, raw_stderr_bytes = interactive.collect_output(run_id)
             write_bytes_atomic(stdout_path, raw_stdout_bytes)
@@ -381,6 +383,7 @@ def run(
                 orchestrator.emit('interactive_termination_attempted', pid=process.pid, succeeded=True)
             except InteractiveAgentError as error:
                 orchestrator.emit('interactive_termination_failed', reason=str(error), pid=process.pid)
+            collect_agent_best_effort()
             agent_exit = 124
         else:
             timed_out = False

@@ -384,6 +384,9 @@ def judge_run(
         'evaluator.json': _read_json(run_dir / 'evaluator.json'),
         'evaluator.jsonl': _read_jsonl(run_dir / 'evaluator.jsonl'),
     }
+    recovery_path = run_dir / 'output-recovery.json'
+    if recovery_path.exists():
+        evidence['output-recovery.json'] = _read_json(recovery_path)
     evidence_bytes = json.dumps(
         evidence, ensure_ascii=False, separators=(',', ':'),
     ).encode('utf-8')
