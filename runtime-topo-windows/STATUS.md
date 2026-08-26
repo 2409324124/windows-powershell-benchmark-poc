@@ -1,4 +1,4 @@
-# Implementation Status — 2026-08-24
+# Implementation Status — 2026-08-26
 
 ## Completed
 
@@ -20,19 +20,29 @@
 - Exactly one disposable overlay created at user request: `canary-transport-001`.
 - SPICE is enabled on this login overlay with clipboard and file transfer enabled. The formal benchmark template remains headless and has no SPICE, installation media, USB redirection, or shared host directory.
 - Three-stream logging implementation is present: orchestrator, agent, evaluator JSONL.
+- Normal and timeout paths preserve captured OpenCode bytes in `opencode.stdout.jsonl` and `opencode.stderr.log`; `TimeoutExpired` partial output is no longer discarded.
+- Task setup removes stale output before every run, and overall PASS now requires both lifecycle PASS and evaluator PASS.
 - Shell/PowerShell/libvirt failure cases from the deployment are documented in `docs/shell-command-lessons.md`.
 
 ## Test status
 
 - Transport smoke test: **PASS**. Exact UTF-8 bytes and CRLF were checked externally.
 - Overlay boot and SSH: **PASS**.
-- OpenCode real model canary with `opencode-go/gpt-5.6-luna`, variant `medium`: **EVALUATOR PASS / LIFECYCLE TIMEOUT**.
+- Historical OpenCode canary `opencode-ps002-53afe878` with `opencode-go/gpt-5.6-luna`, variant `medium`: **EVALUATOR PASS / LIFECYCLE TIMEOUT**.
   - Luna changed `build.ps1` to resolve `Trusted Tools\compiler.exe` with `Join-Path` and invoke it with preserved argument boundaries.
   - Exact output, trusted provenance, and absence of the shadow marker all passed.
   - The OpenCode CLI did not exit before the 300-second supervisor deadline, so `agent_exit=124` even though the task result scored 1.
   - No canary OpenCode process remained after timeout. The only remaining OpenCode process was the user's interactive Explorer-launched session.
   - Run ID: `opencode-ps002-53afe878`.
   - Selected raw logs and the preceding `EUNKNOWN` transport errors are published in [`artifacts/`](artifacts/).
+- Results produced before stale-output cleanup are now non-authoritative and must not be used as benchmark scores.
+- Capture regression run `opencode-ps002-0dc96385`: **INVALID CONTAMINATED PASS**.
+  - Raw OpenCode stdout contained one retryable `APIError` for `https://opencode.ai/zen/go/v1/responses`; Agent exited `1`.
+  - The evaluator passed only because the old setup retained the preceding run's output, exposing the cleanup and score-composition bugs.
+- Corrected run `opencode-ps002-b7f42db4`: **FAIL (CORRECTLY CLASSIFIED)**.
+  - The same raw API connectivity error was captured; `opencode.stdout.jsonl` is 300 bytes and stderr is empty.
+  - Clean setup left no output or trusted provenance. `lifecycle_pass=false`, `evaluator_pass=false`, `passed=false`, `score=0`.
+  - All eight run artifacts exist and all JSON/JSONL files parse successfully.
 - Earlier provider/transport attempts failed before any task change: zero credentials, wrong `openai/` provider prefix, and inherited SSH PTY stdin causing `EUNKNOWN: unknown error, read`.
 
 ## Intentional deviations / recorded risk
@@ -43,11 +53,4 @@
 
 ## Immediate next step
 
-Make the supervisor launch OpenCode with redirected stdout/stderr and an explicit guest PID, then terminate the guest process tree at deadline and collect raw JSONL before evaluation. Re-run:
-
-```bash
-cd /home/miku/runtime-topo-windows
-python3 -m runner.run opencode-canary --output ./results
-```
-
-The evaluator is invoked only after the agent process/SSH transport has stopped and is not written into the guest beforehand.
+Diagnose and restore guest connectivity to `https://opencode.ai/zen/go/v1/responses`, then repeat the clean canary. Guest-side spool files, incremental host collection, an explicit Agent PID, and Job Object termination remain the next reliability phase; they are not part of the current minimal capture fix.

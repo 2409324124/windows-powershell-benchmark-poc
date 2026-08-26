@@ -1,0 +1,2 @@
+runtime-topo-windows/artifacts/**/opencode.stdout.jsonl binary
+runtime-topo-windows/artifacts/**/opencode.stderr.log binary

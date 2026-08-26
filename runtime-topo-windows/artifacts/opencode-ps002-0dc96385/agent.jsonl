@@ -1,0 +1,2 @@
+{"ts":"2026-08-26T05:41:54.642Z","stream":"agent","event":"opencode_event","payload":{"type":"error","timestamp":1787722914356,"sessionID":"ses_fc36c14e1ffe7iqmhMrh4gtfUZ","error":{"name":"APIError","data":{"message":"Cannot connect to API: Unable to connect. Is the computer able to access the url?","isRetryable":true,"metadata":{"url":"https://opencode.ai/zen/go/v1/responses"}}}}}
+{"ts":"2026-08-26T05:41:54.648Z","stream":"agent","event":"process_finished","exit_code":1,"timed_out":false,"stderr":""}
