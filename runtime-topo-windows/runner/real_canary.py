@@ -130,7 +130,14 @@ def _record_stdout(agent_log: JsonlLog, raw_stdout: bytes) -> None:
         agent_log.emit('opencode_event', payload=payload)
 
 
-def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = False) -> int:
+def run(
+    config: dict,
+    project_root: Path,
+    output_root: Path,
+    *,
+    visual: bool = False,
+    run_id: str | None = None,
+) -> int:
     task_id = str(config.get('task', 'ps002-path-quoting'))
     try:
         task, task_manifest = load_task(project_root, task_id)
@@ -138,7 +145,9 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         print(f'Unable to load benchmark task {task_id}: {error}', file=sys.stderr)
         return 2
 
-    domain = 'wcb-canary-transport-001'
+    domain = str(config.get('runtime', {}).get(
+        'visual_domain', 'wcb-canary-transport-001',
+    ))
     if visual:
         try:
             require_visual_domain(domain)
@@ -162,8 +171,19 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         return 2
 
     task_code = task_id.split('-', 1)[0]
-    run_id = f'opencode-{task_code}-' + uuid.uuid4().hex[:8]
+    if run_id is None:
+        run_id = f'opencode-{task_code}-' + uuid.uuid4().hex[:8]
+    elif (
+        not isinstance(run_id, str)
+        or Path(run_id).name != run_id
+        or not run_id.startswith(f'opencode-{task_code}-')
+    ):
+        print(f'invalid explicit run id for {task_id}: {run_id!r}', file=sys.stderr)
+        return 2
     run_dir = output_root / run_id
+    if run_dir.exists():
+        print(f'run directory already exists: {run_dir}', file=sys.stderr)
+        return 2
     orchestrator = JsonlLog(run_dir / 'orchestrator.jsonl', 'orchestrator')
     agent_log = JsonlLog(run_dir / 'agent.jsonl', 'agent')
     evaluator_log = JsonlLog(run_dir / 'evaluator.jsonl', 'evaluator')
@@ -272,6 +292,27 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
                 'interactive command line unexpectedly contains --variant'
             )
         interactive.mark_running(process)
+        integrity = None
+        expected_integrity = config.get('runtime', {}).get('expected_integrity_rid')
+        if expected_integrity is not None:
+            try:
+                expected_integrity = int(expected_integrity)
+            except (TypeError, ValueError) as error:
+                raise InteractiveAgentError(
+                    'runtime.expected_integrity_rid must be an integer'
+                ) from error
+            integrity = interactive.inspect_integrity(
+                (launcher_identity.wrapper_pid, process.pid),
+            )
+            actual = {
+                'wrapper': integrity[launcher_identity.wrapper_pid],
+                'agent': integrity[process.pid],
+            }
+            if any(value != expected_integrity for value in actual.values()):
+                raise InteractiveAgentError(
+                    f'interactive integrity mismatch: expected {expected_integrity}, '
+                    f'got wrapper={actual["wrapper"]}, agent={actual["agent"]}'
+                )
         collect_auth_best_effort()
         orchestrator.emit('auth_checked', interactive=True, passed=True)
 
@@ -288,6 +329,13 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
             'username': process.username,
             'executable': process.executable,
             'command_line': process.command_line,
+            'wrapper_integrity_rid': (
+                integrity[launcher_identity.wrapper_pid]
+                if integrity is not None else None
+            ),
+            'integrity_rid': (
+                integrity[process.pid] if integrity is not None else None
+            ),
             'captured_at': utc_now(),
         }
         write_json_atomic(run_dir / 'interactive-process.json', process_evidence)

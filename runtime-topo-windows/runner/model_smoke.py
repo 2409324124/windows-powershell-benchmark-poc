@@ -81,7 +81,13 @@ def _parse_response(raw: bytes) -> tuple[str, list[str]]:
     return reply, errors
 
 
-def run(config: dict, project_root: Path, output_root: Path) -> int:
+def run(
+    config: dict,
+    project_root: Path,
+    output_root: Path,
+    *,
+    run_id: str | None = None,
+) -> int:
     opencode = config.get('opencode')
     guest = config.get('guest')
     if not isinstance(opencode, dict) or not isinstance(guest, dict):
@@ -116,7 +122,15 @@ def run(config: dict, project_root: Path, output_root: Path) -> int:
         print('model smoke timeout must be positive', file=sys.stderr)
         return 2
 
-    run_id = 'model-smoke-' + uuid.uuid4().hex[:8]
+    if run_id is None:
+        run_id = 'model-smoke-' + uuid.uuid4().hex[:8]
+    elif (
+        not isinstance(run_id, str)
+        or Path(run_id).name != run_id
+        or not run_id.startswith('model-smoke-')
+    ):
+        print(f'invalid explicit model smoke run id: {run_id!r}', file=sys.stderr)
+        return 2
     run_dir = output_root / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     started_at = utc_now()

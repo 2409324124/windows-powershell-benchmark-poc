@@ -1,0 +1,22 @@
+schema: wcb.matrix/v1
+id: low-tier-5x5-20260827
+tasks:
+  - ps001-utf8-output
+  - ps002-path-quoting
+  - ps003-native-exit
+  - ps004-parallel-merge
+  - ps005-transactional-deploy
+models:
+  - id: deepseek
+    model: opencode-go/deepseek-v4-flash
+    variant: low
+  - id: qwen37
+    model: opencode-go/qwen3.7-plus
+  - id: hy3
+    model: opencode-go/hy3
+    variant: none
+  - id: mimo25
+    model: opencode-go/mimo-v2.5
+  - id: longcat20
+    model: opencode-go/longcat-2.0
+    variant: low

@@ -530,6 +530,75 @@ $ok = $null -ne $p -and [int]$p.ParentProcessId -eq {process.parent_pid} -and [i
         payload = _json_result(self.target.run(_control_powershell(script), timeout=30), "process liveness check")
         return bool(payload["alive"])
 
+    def inspect_integrity(self, process_ids: Sequence[int]) -> dict[int, int]:
+        if not process_ids or any(type(pid) is not int or pid <= 0 for pid in process_ids):
+            raise InteractiveAgentError("integrity inspection requires positive process ids")
+        ids = ",".join(str(pid) for pid in process_ids)
+        script = rf"""
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class WcbTokenIntegrity {{
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern IntPtr OpenProcess(uint access, bool inherit, int processId);
+  [DllImport("advapi32.dll", SetLastError=true)]
+  public static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+  [DllImport("advapi32.dll", SetLastError=true)]
+  public static extern bool GetTokenInformation(IntPtr token, int tokenClass, IntPtr info, int length, out int returnLength);
+  [DllImport("kernel32.dll")]
+  public static extern bool CloseHandle(IntPtr handle);
+
+  public static int GetRid(int processId) {{
+    IntPtr process = OpenProcess(0x1000, false, processId);
+    if (process == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    IntPtr token = IntPtr.Zero;
+    IntPtr buffer = IntPtr.Zero;
+    try {{
+      if (!OpenProcessToken(process, 0x0008, out token)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      int length = 0;
+      GetTokenInformation(token, 25, IntPtr.Zero, 0, out length);
+      buffer = Marshal.AllocHGlobal(length);
+      if (!GetTokenInformation(token, 25, buffer, length, out length)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      IntPtr sid = Marshal.ReadIntPtr(buffer);
+      int count = Marshal.ReadByte(sid, 1);
+      if (count < 1) throw new InvalidOperationException("integrity SID has no subauthority");
+      return Marshal.ReadInt32(sid, 8 + 4 * (count - 1));
+    }} finally {{
+      if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+      if (token != IntPtr.Zero) CloseHandle(token);
+      CloseHandle(process);
+    }}
+  }}
+}}
+'@
+$items = foreach ($pidValue in @({ids})) {{
+  [ordered]@{{ pid=[int]$pidValue; integrity_rid=[WcbTokenIntegrity]::GetRid([int]$pidValue) }}
+}}
+@($items) | ConvertTo-Json -Compress
+"""
+        result = self.target.run(_control_powershell(script), timeout=30)
+        if result.returncode != 0:
+            detail = result.stderr.decode("utf-8", "replace").strip()
+            raise InteractiveAgentError(
+                "process integrity inspection failed: "
+                + (detail or f"exit {result.returncode}")
+            )
+        try:
+            value = json.loads(result.stdout.decode("utf-8", "replace").strip())
+        except json.JSONDecodeError as error:
+            raise InteractiveAgentError("process integrity inspection returned invalid JSON") from error
+        items = value if isinstance(value, list) else [value]
+        try:
+            result_by_pid = {
+                int(item["pid"]): int(item["integrity_rid"])
+                for item in items
+            }
+        except (KeyError, TypeError, ValueError) as error:
+            raise InteractiveAgentError("process integrity inspection returned invalid values") from error
+        if set(result_by_pid) != set(process_ids):
+            raise InteractiveAgentError("process integrity inspection returned incomplete values")
+        return result_by_pid
+
     def terminate(self, process: InteractiveProcess) -> None:
         script = rf"""
 $p = Get-CimInstance Win32_Process -Filter "ProcessId = {process.pid}" -ErrorAction SilentlyContinue

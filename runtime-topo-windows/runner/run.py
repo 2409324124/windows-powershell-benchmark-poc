@@ -10,6 +10,7 @@ import yaml
 
 from runner.opencode import SshTarget, encoded_powershell
 from runner.model_smoke import run as run_model_smoke
+from runner.matrix import run as run_matrix
 from runner.process_judge import ProcessJudgeError, judge_root
 from runner.real_canary import run as run_real_canary
 from runner.report import JsonlLog, utc_now, write_json_atomic
@@ -69,7 +70,7 @@ def main() -> int:
         "command",
         choices=(
             "transport-canary", "opencode-canary", "model-smoke",
-            "process-judge", "score",
+            "process-judge", "score", "matrix",
         ),
     )
     parser.add_argument("--config", type=Path, default=ROOT / "benchmark.yaml")
@@ -83,11 +84,32 @@ def main() -> int:
         help="omit --variant and use the provider default",
     )
     parser.add_argument("--run-id", help="process exactly one direct child run id")
+    parser.add_argument("--matrix", type=Path, help="matrix definition YAML")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="resume a matrix from its persisted safe phase",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="print the expanded matrix without creating artifacts",
+    )
     parser.add_argument(
         "--visual", action="store_true",
         help="capture host-side screenshots from a visual SPICE domain",
     )
     args = parser.parse_args()
+    if args.command == "matrix":
+        if args.output is None:
+            parser.error("matrix requires --output ROOT")
+        if args.matrix is None:
+            parser.error("matrix requires --matrix FILE")
+        if args.run_id or args.task or args.model or args.variant or args.no_variant:
+            parser.error("matrix model/task selection comes only from --matrix FILE")
+        config = load_config(args.config)
+        return run_matrix(
+            config, ROOT, args.matrix, args.output,
+            visual=args.visual, resume=args.resume, dry_run=args.dry_run,
+        )
     if args.command == "score":
         if args.output is None:
             parser.error("score requires --output ROOT")
@@ -136,9 +158,11 @@ def main() -> int:
     if args.command == "transport-canary":
         return transport_canary(config, output)
     if args.command == "opencode-canary":
-        return run_real_canary(config, ROOT, output, visual=args.visual)
+        return run_real_canary(
+            config, ROOT, output, visual=args.visual, run_id=args.run_id,
+        )
     if args.command == "model-smoke":
-        return run_model_smoke(config, ROOT, output)
+        return run_model_smoke(config, ROOT, output, run_id=args.run_id)
     return 2
 
 

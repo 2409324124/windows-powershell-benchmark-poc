@@ -12,6 +12,9 @@ storage:
   overlays: /mnt/PM983/windows-benchmark/overlays
   runs: /mnt/PM983/windows-benchmark/runs
 runtime:
+  visual_domain: wcb-canary-transport-001
+  approved_overlay: /mnt/PM983/windows-benchmark/runs/canary-transport-001/validated-userstate.qcow2
+  expected_integrity_rid: 8192
   ssh_timeout_seconds: 120
   agent_timeout_seconds: 300
   keep_on_failure: false
