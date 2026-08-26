@@ -55,6 +55,11 @@ Enable host-side framebuffer screenshots for the OpenCode canary with:
 python3 -m runner.run opencode-canary --visual --output ./results
 ```
 
+`--visual` does not create or modify a VM. Before setup or Agent execution, it
+checks the running domain XML for SPICE graphics and a video device. A headless
+or uninspectable domain is reported as a visual-mode configuration error, with
+instructions to instantiate/start the domain using `--visual` first.
+
 The run directory contains `screenshots/000-agent-start.png`, snapshots at
 30-second intervals through `270.png`, a timeout or agent-exit snapshot, and an
 evaluator-before snapshot. Screenshot failures only append a

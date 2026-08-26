@@ -1,44 +1,58 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import sys
+import time
 import uuid
 from pathlib import Path
 
-from runner.opencode import SshTarget, encoded_powershell
-from runner.report import JsonlLog, utc_now, write_json_atomic
-from runner.vm import ScreenshotMonitor
+from runner.opencode import InteractiveAgentError, InteractiveOpenCode, SshTarget, encoded_powershell
+from runner.report import JsonlLog, utc_now, write_bytes_atomic, write_json_atomic
+from runner.vm import ScreenshotMonitor, VisualModeError, require_visual_domain
 
 
-def _partial_bytes(value: bytes | str | None) -> bytes:
-    if value is None:
-        return b''
-    if isinstance(value, bytes):
-        return value
-    return value.encode('utf-8', 'replace')
+def _record_stdout(agent_log: JsonlLog, raw_stdout: bytes) -> None:
+    for line in raw_stdout.decode('utf-8', 'replace').splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            payload = {'raw': line}
+        agent_log.emit('opencode_event', payload=payload)
 
 
 def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = False) -> int:
-    run_id = 'opencode-ps002-' + uuid.uuid4().hex[:8]
-    run_dir = output_root / run_id
-    orchestrator = JsonlLog(run_dir / 'orchestrator.jsonl', 'orchestrator')
-    agent_log = JsonlLog(run_dir / 'agent.jsonl', 'agent')
-    evaluator_log = JsonlLog(run_dir / 'evaluator.jsonl', 'evaluator')
+    domain = 'wcb-canary-transport-001'
+    if visual:
+        try:
+            require_visual_domain(domain)
+        except VisualModeError as error:
+            print(error, file=sys.stderr)
+            return 2
+
     guest = config['guest']
     target = SshTarget(
         address=guest['address'], user=guest['user'],
         identity=Path(guest['ssh_key']), known_hosts=Path(guest['known_hosts']),
     )
+    launcher = (project_root / 'config/run-interactive-opencode.ps1').read_text(encoding='utf-8')
+    interactive = InteractiveOpenCode(target, guest['user'], launcher)
+    try:
+        console = interactive.preflight()
+    except InteractiveAgentError as error:
+        print(error, file=sys.stderr)
+        return 2
+
+    run_id = 'opencode-ps002-' + uuid.uuid4().hex[:8]
+    run_dir = output_root / run_id
+    orchestrator = JsonlLog(run_dir / 'orchestrator.jsonl', 'orchestrator')
+    agent_log = JsonlLog(run_dir / 'agent.jsonl', 'agent')
+    evaluator_log = JsonlLog(run_dir / 'evaluator.jsonl', 'evaluator')
     task = project_root / 'tasks/ps002-path-quoting'
     workspace = r'C:\WCB\tasks\PS002 Project (quoted)'
-    domain = 'wcb-canary-transport-001'
-    orchestrator.emit('run_started', run_id=run_id, domain=domain, task='ps002-path-quoting', visual=visual)
-
-    auth = target.run(r'"C:\Program Files\OpenCode\1.18.21\opencode.exe" auth list', timeout=30)
-    orchestrator.emit('auth_checked', exit_code=auth.returncode, stdout=auth.stdout.decode('utf-8', 'replace'), stderr=auth.stderr.decode('utf-8', 'replace'))
-    if auth.returncode != 0 or b'0 credentials' in auth.stdout.lower():
-        orchestrator.emit('run_finished', passed=False, reason='no OpenCode credential found')
-        return 2
+    orchestrator.emit(
+        'run_started', run_id=run_id, domain=domain, task='ps002-path-quoting',
+        visual=visual, console_session_id=console.session_id,
+    )
 
     setup = target.run(encoded_powershell((task / 'setup.ps1').read_text(encoding='utf-8')), timeout=90)
     orchestrator.emit('task_setup', exit_code=setup.returncode, stdout=setup.stdout.decode('utf-8', 'replace'), stderr=setup.stderr.decode('utf-8', 'replace'))
@@ -51,83 +65,187 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     model = config['opencode']['model']
     variant = config['opencode']['variant']
     agent = config['opencode']['agent']
-    ps = f"""
-$ErrorActionPreference = 'Stop'
-$env:Path = '{workspace}\\Shadow;' + $env:Path
-$arguments = @('--pure','run','--auto','--agent','{agent}','--format','json','--dir','{workspace}','--model','{model}','--variant','{variant}',@'
-{prompt}
-'@)
-& '{executable}' @arguments
-exit $LASTEXITCODE
-"""
-    orchestrator.emit('agent_started', model=model, variant=variant, executable=executable)
+    arguments = (
+        '--pure', 'run', '--auto', '--agent', agent, '--format', 'json',
+        '--dir', workspace, '--model', model, '--variant', variant, prompt,
+    )
     stdout_path = run_dir / 'opencode.stdout.jsonl'
     stderr_path = run_dir / 'opencode.stderr.log'
-    stdout_path.write_bytes(b'')
-    stderr_path.write_bytes(b'')
+    auth_stdout_path = run_dir / 'opencode.auth.stdout.log'
+    auth_stderr_path = run_dir / 'opencode.auth.stderr.log'
+    for path in (stdout_path, stderr_path, auth_stdout_path, auth_stderr_path):
+        write_bytes_atomic(path, b'')
     screenshots = None
-    if visual:
-        screenshots = ScreenshotMonitor(
-            domain, run_dir, orchestrator,
-            timeout_seconds=config['runtime']['agent_timeout_seconds'],
-        )
-        screenshots.start()
-    timeout_observed = False
+    process = None
+    launcher_identity = None
+    staging_attempted = False
+    staged = False
+    screenshot_finished = False
+    auth_collected = False
+    agent_output_collected = False
+    raw_stdout_bytes = b''
+    raw_stderr_bytes = b''
+    timed_out = False
+    agent_exit = 2
 
-    def observe_timeout(error: subprocess.TimeoutExpired) -> None:
-        nonlocal timeout_observed
-        if timeout_observed:
+    def collect_auth_best_effort() -> None:
+        nonlocal auth_collected
+        if auth_collected or not staging_attempted:
             return
-        timeout_observed = True
-        if screenshots is not None:
-            screenshots.finish_agent(timed_out=True)
-        stdout_path.write_bytes(_partial_bytes(error.stdout))
-        stderr_path.write_bytes(_partial_bytes(error.stderr))
-        orchestrator.emit('agent_timeout', timeout_seconds=config['runtime']['agent_timeout_seconds'])
+        try:
+            auth_stdout, auth_stderr = interactive.collect_auth_output(run_id)
+            write_bytes_atomic(auth_stdout_path, auth_stdout)
+            write_bytes_atomic(auth_stderr_path, auth_stderr)
+            auth_collected = True
+            orchestrator.emit('auth_output_collected')
+        except Exception as error:
+            orchestrator.emit('auth_output_collection_failed', reason=str(error))
+
+    def collect_agent_best_effort() -> None:
+        nonlocal raw_stdout_bytes, raw_stderr_bytes, agent_output_collected
+        try:
+            raw_stdout_bytes, raw_stderr_bytes = interactive.collect_output(run_id)
+            write_bytes_atomic(stdout_path, raw_stdout_bytes)
+            write_bytes_atomic(stderr_path, raw_stderr_bytes)
+            agent_output_collected = True
+        except Exception as error:
+            orchestrator.emit('agent_output_collection_failed', reason=str(error))
 
     try:
-        result = target.run(
-            encoded_powershell(ps),
-            timeout=config['runtime']['agent_timeout_seconds'],
-            on_timeout=observe_timeout,
+        staging_attempted = True
+        interactive.stage(
+            run_id, executable=executable, arguments=arguments,
+            workspace=workspace, expected_session_id=console.session_id,
         )
-        timed_out = False
-        raw_stdout_bytes = result.stdout
-        raw_stderr_bytes = result.stderr
-        if screenshots is not None:
-            screenshots.finish_agent(timed_out=False)
-    except subprocess.TimeoutExpired as error:
-        timed_out = True
-        result = None
-        # SshTarget calls this before killing the timed-out SSH process. Keep the
-        # fallback for test doubles and alternate targets.
-        observe_timeout(error)
-        raw_stdout_bytes = _partial_bytes(error.stdout)
-        raw_stderr_bytes = _partial_bytes(error.stderr)
+        staged = True
+        interactive.start(run_id)
+        launcher_identity = interactive.inspect_launcher(run_id, console)
+        process = interactive.inspect_process(launcher_identity)
+        if process.session_id != console.session_id:
+            raise InteractiveAgentError(
+                f'OpenCode session {process.session_id} does not match console session {console.session_id}'
+            )
+        if process.executable.casefold() != executable.casefold():
+            raise InteractiveAgentError(f'unexpected interactive executable: {process.executable}')
+        command_line_folded = process.command_line.casefold()
+        for expected in (workspace, model, variant, agent):
+            if expected.casefold() not in command_line_folded:
+                raise InteractiveAgentError(f'interactive command line is missing expected value: {expected}')
+        interactive.mark_running(process)
+        collect_auth_best_effort()
+        orchestrator.emit('auth_checked', interactive=True, passed=True)
 
-    stdout_path.write_bytes(raw_stdout_bytes)
-    stderr_path.write_bytes(raw_stderr_bytes)
-    if result is not None:
-        raw_stdout = raw_stdout_bytes.decode('utf-8', 'replace')
-        raw_stderr = raw_stderr_bytes.decode('utf-8', 'replace')
-        for line in raw_stdout.splitlines():
+        process_evidence = {
+            'schema': 'wcb.interactive-process/v1',
+            'run_id': run_id,
+            'task_name': process.task_name,
+            'wrapper_pid': process.wrapper_pid,
+            'pid': process.pid,
+            'parent_pid': process.parent_pid,
+            'session_id': process.session_id,
+            'console_session_id': console.session_id,
+            'explorer_pid': console.explorer_pid,
+            'username': process.username,
+            'executable': process.executable,
+            'command_line': process.command_line,
+            'captured_at': utc_now(),
+        }
+        write_json_atomic(run_dir / 'interactive-process.json', process_evidence)
+        agent_log.emit('interactive_process_started', **process_evidence)
+        orchestrator.emit(
+            'agent_started', model=model, variant=variant, executable=executable,
+            pid=process.pid, session_id=process.session_id, task_name=process.task_name,
+        )
+
+        if visual:
+            screenshots = ScreenshotMonitor(
+                domain, run_dir, orchestrator,
+                timeout_seconds=config['runtime']['agent_timeout_seconds'],
+                context={
+                    'run_id': run_id, 'pid': process.pid,
+                    'session_id': process.session_id, 'task_name': process.task_name,
+                },
+            )
+            screenshots.start()
+
+        deadline = time.monotonic() + config['runtime']['agent_timeout_seconds']
+        interactive_result = None
+        while time.monotonic() < deadline:
+            interactive_result = interactive.read_result(launcher_identity)
+            if interactive_result is not None:
+                break
+            time.sleep(1)
+
+        if interactive_result is None:
+            timed_out = True
+            if screenshots is not None:
+                screenshots.finish_agent(timed_out=True)
+                screenshot_finished = True
+            collect_agent_best_effort()
+            orchestrator.emit(
+                'agent_timeout', timeout_seconds=config['runtime']['agent_timeout_seconds'],
+                pid=process.pid, session_id=process.session_id,
+            )
             try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                payload = {'raw': line}
-            agent_log.emit('opencode_event', payload=payload)
-        agent_log.emit('process_exit', exit_code=result.returncode, stderr=raw_stderr)
-        agent_exit = result.returncode
-    else:
-        raw_stdout = raw_stdout_bytes.decode('utf-8', 'replace')
-        for line in raw_stdout.splitlines():
+                interactive.terminate(process)
+                orchestrator.emit('interactive_termination_attempted', pid=process.pid, succeeded=True)
+            except InteractiveAgentError as error:
+                orchestrator.emit('interactive_termination_failed', reason=str(error), pid=process.pid)
+            agent_exit = 124
+        else:
+            timed_out = False
+            if screenshots is not None:
+                screenshots.finish_agent(timed_out=False)
+                screenshot_finished = True
+            collect_agent_best_effort()
+            agent_exit = int(interactive_result['exit_code'])
+    except InteractiveAgentError as error:
+        if screenshots is not None and not screenshot_finished:
+            screenshots.stop()
+        collect_auth_best_effort()
+        collect_agent_best_effort()
+        orchestrator.emit('interactive_agent_failed', reason=str(error))
+        agent_exit = 2
+    finally:
+        if staging_attempted:
+            collect_auth_best_effort()
             try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                payload = {'raw': line}
-            agent_log.emit('opencode_event', payload=payload)
+                cleanup = interactive.cleanup(
+                    run_id, console, launcher_identity, process,
+                    preserve_staging=(
+                        not staged or not auth_collected or not agent_output_collected
+                    ),
+                )
+                if cleanup.get('cleaned'):
+                    orchestrator.emit(
+                        'interactive_cleanup_finished',
+                        guest_staging_preserved=bool(cleanup.get('staging_preserved')),
+                    )
+                else:
+                    diagnostic = {
+                        'schema': 'wcb.interactive-diagnostics/v1',
+                        'run_id': run_id,
+                        'reason': cleanup.get('reason'),
+                        'cleanup': cleanup.get('diagnostic'),
+                        'auth_stdout': auth_stdout_path.name,
+                        'auth_stderr': auth_stderr_path.name,
+                        'guest_staging_preserved': bool(cleanup.get('staging_preserved', True)),
+                    }
+                    write_json_atomic(run_dir / 'interactive-diagnostics.json', diagnostic)
+                    orchestrator.emit(
+                        'interactive_cleanup_refused', reason=cleanup.get('reason'),
+                        guest_staging_preserved=bool(cleanup.get('staging_preserved', True)),
+                    )
+            except Exception as error:
+                orchestrator.emit('interactive_cleanup_failed', reason=str(error))
+
+    collect_auth_best_effort()
+
+    _record_stdout(agent_log, raw_stdout_bytes)
+    if timed_out:
         agent_log.emit('process_timeout', timeout_seconds=config['runtime']['agent_timeout_seconds'])
-        agent_exit = 124
+    else:
+        agent_log.emit('process_exit', exit_code=agent_exit, stderr=raw_stderr_bytes.decode('utf-8', 'replace'))
     orchestrator.emit('agent_finished', exit_code=agent_exit, timed_out=timed_out)
 
     if screenshots is not None:

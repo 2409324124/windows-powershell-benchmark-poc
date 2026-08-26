@@ -5,6 +5,7 @@ import os
 import subprocess
 import threading
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Sequence
 
@@ -16,9 +17,51 @@ SCREENSHOT_SCHEDULE: tuple[tuple[float, str], ...] = tuple(
 )
 
 
+class VisualModeError(RuntimeError):
+    pass
+
+
 def run_libvirt(arguments: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     command = " ".join(subprocess.list2cmdline([item]) for item in ["virsh", "--connect", "qemu:///system", *arguments])
     return subprocess.run(["sg", "libvirt", "-c", command], text=True, capture_output=True, timeout=timeout, check=False)
+
+
+def require_visual_domain(domain: str) -> None:
+    result = run_libvirt(["dumpxml", domain], timeout=10)
+    if result.returncode != 0:
+        reason = result.stderr.strip() or result.stdout.strip() or f"virsh exited {result.returncode}"
+        raise VisualModeError(f"Unable to inspect domain {domain}: {reason}")
+    try:
+        root = ET.fromstring(result.stdout)
+    except ET.ParseError as error:
+        raise VisualModeError(f"Unable to inspect domain {domain}: invalid domain XML: {error}") from error
+    graphics = root.find("./devices/graphics[@type='spice']")
+    video = root.find("./devices/video")
+    if graphics is None or video is None:
+        raise VisualModeError(
+            f"Visual mode requested, but domain {domain}\n"
+            "has no graphical framebuffer.\n\n"
+            "Instantiate/start the domain with --visual first."
+        )
+    clipboard = graphics.find("clipboard")
+    filetransfer = graphics.find("filetransfer")
+    prohibited = (
+        root.find("./devices/filesystem") is not None
+        or root.find("./devices/redirdev") is not None
+        or any(
+            channel.find("target") is not None
+            and channel.find("target").get("name", "").startswith("com.redhat.spice")
+            for channel in root.findall("./devices/channel")
+        )
+    )
+    if (
+        clipboard is None or clipboard.get("copypaste") != "no"
+        or filetransfer is None or filetransfer.get("enable") != "no"
+        or prohibited
+    ):
+        raise VisualModeError(
+            f"Visual mode requested, but domain {domain} does not satisfy the restricted SPICE policy."
+        )
 
 
 class ScreenshotMonitor:
@@ -31,12 +74,14 @@ class ScreenshotMonitor:
         orchestrator: JsonlLog,
         *,
         timeout_seconds: int,
+        context: dict[str, object] | None = None,
         schedule: Sequence[tuple[float, str]] = SCREENSHOT_SCHEDULE,
     ) -> None:
         self.domain = domain
         self.directory = run_dir / "screenshots"
         self.orchestrator = orchestrator
         self.timeout_seconds = timeout_seconds
+        self.context = context or {}
         self.schedule = schedule
         self.started_at = 0.0
         self._stop = threading.Event()
@@ -52,13 +97,16 @@ class ScreenshotMonitor:
                 reason = result.stderr.strip() or result.stdout.strip() or f"virsh exited {result.returncode}"
                 raise RuntimeError(reason)
             os.replace(temporary, destination)
+            self.orchestrator.emit("screenshot_captured", filename=filename, **self.context)
             return True
         except Exception as error:
             try:
                 temporary.unlink()
             except FileNotFoundError:
                 pass
-            self.orchestrator.emit("screenshot_failed", reason=str(error), filename=filename)
+            self.orchestrator.emit(
+                "screenshot_failed", reason=str(error), filename=filename, **self.context,
+            )
             return False
 
     def start(self) -> None:
@@ -75,15 +123,18 @@ class ScreenshotMonitor:
             self.capture(filename)
 
     def finish_agent(self, *, timed_out: bool) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join()
+        self.stop()
         if timed_out:
             filename = f"{self.timeout_seconds:03d}-timeout.png"
         else:
             elapsed = max(0, round(time.monotonic() - self.started_at))
             filename = f"{elapsed:03d}-agent-exit.png"
         self.capture(filename)
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
 
     def evaluator_before(self) -> None:
         elapsed = max(0, round(time.monotonic() - self.started_at))
