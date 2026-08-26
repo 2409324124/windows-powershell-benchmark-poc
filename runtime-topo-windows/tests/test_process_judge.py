@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
+from unittest.mock import Mock
 
 from runner.process_judge import (
     CRITERION_IDS,
     ProcessJudgeError,
     _judge_config_content,
     _parse_opencode_output,
+    _stage_bundle,
 )
 
 
@@ -33,6 +36,26 @@ def jsonl(*events: dict) -> bytes:
 
 
 class OpenCodeJudgeOutputTests(unittest.TestCase):
+    def test_staging_grants_modify_but_keeps_judge_evidence_read_only(self) -> None:
+        target = Mock()
+        target.upload_bytes.return_value = subprocess.CompletedProcess(
+            [], 0, b'', b'',
+        )
+        target.run.return_value = subprocess.CompletedProcess([], 0, b'', b'')
+
+        workspace = _stage_bundle(
+            target, 'judge-example', b'zip', b'{}', 'wcb-agent-admin',
+        )
+
+        self.assertEqual(
+            workspace, r'C:\WCB\judge-runs\judge-example\workspace',
+        )
+        script = target.upload_bytes.call_args.args[0].decode('utf-8-sig')
+        self.assertIn("$modifyGrant = '*' + $judgeSid + ':(OI)(CI)M'", script)
+        self.assertIn('icacls.exe $workspace /grant:r $modifyGrant /T /C', script)
+        self.assertIn("$readGrant = '*' + $judgeSid + ':(OI)(CI)RX'", script)
+        self.assertIn('icacls.exe $evidenceRoot /inheritance:r /grant:r', script)
+
     def test_accepts_exact_json_after_successful_windows_replay(self) -> None:
         expected = judge_result(9)
         result, replay = _parse_opencode_output(jsonl(

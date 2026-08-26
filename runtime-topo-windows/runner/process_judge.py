@@ -252,6 +252,7 @@ def _stage_bundle(
     run_id: str,
     archive: bytes,
     evidence: bytes,
+    judge_user: str,
 ) -> str:
     archive_name = f'wcb-{run_id}-judge-workspace.zip'
     evidence_name = f'wcb-{run_id}-judge-evidence.json'
@@ -268,16 +269,27 @@ def _stage_bundle(
     script = rf"""
 $root = '{root}'
 $workspace = Join-Path $root 'workspace'
+$judgeUser = '{judge_user.replace("'", "''")}'
 $archiveSource = Join-Path $env:USERPROFILE '{archive_name}'
 $evidenceSource = Join-Path $env:USERPROFILE '{evidence_name}'
 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $workspace -Force | Out-Null
 try {{
     Expand-Archive -LiteralPath $archiveSource -DestinationPath $workspace -Force
+    $judgeSid = ([Security.Principal.NTAccount]$judgeUser).Translate(
+        [Security.Principal.SecurityIdentifier]
+    ).Value
+    $modifyGrant = '*' + $judgeSid + ':(OI)(CI)M'
+    & icacls.exe $workspace /grant:r $modifyGrant /T /C | Out-Null
+    if ($LASTEXITCODE -ne 0) {{ throw "icacls workspace grant failed: $LASTEXITCODE" }}
     $evidenceRoot = Join-Path $workspace '.wcb-judge'
     Remove-Item -LiteralPath $evidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
     Move-Item -LiteralPath $evidenceSource -Destination (Join-Path $evidenceRoot 'evidence.json') -Force
+    $readGrant = '*' + $judgeSid + ':(OI)(CI)RX'
+    & icacls.exe $evidenceRoot /inheritance:r /grant:r `
+        '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' $readGrant /T /C | Out-Null
+    if ($LASTEXITCODE -ne 0) {{ throw "icacls evidence grant failed: $LASTEXITCODE" }}
 }} finally {{
     Remove-Item -LiteralPath $archiveSource,$evidenceSource -Force -ErrorAction SilentlyContinue
 }}
@@ -368,6 +380,7 @@ def judge_run(
         bundle_attempted = True
         workspace = _stage_bundle(
             interactive.target, judge_run_id, archive, evidence_bytes,
+            interactive.user,
         )
         arguments = (
             '--pure', 'run', '--auto', '--agent', judge['agent'],
