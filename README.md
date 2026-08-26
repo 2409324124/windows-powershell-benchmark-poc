@@ -8,12 +8,108 @@
 
 > 黑客松演讲与完整幻灯片：<https://powershell.shinonome.xyz/>
 
-这是一个面向 coding agent 的真实 Windows / PowerShell benchmark。仓库目前包含两条互补路径：
+## 最新进展（2026-08-26）：KVM 可视化 Windows 基准
+
+项目当前重点已经从本地脚本 PoC 转向 **真实 KVM/QEMU Windows Server 2025 桌面环境中的 coding-agent 评测**。公开主线位于 [`runtime-topo-windows/`](runtime-topo-windows/)；正在施工的 Runner / Scorer v2 代码保留在 `codex/runner-scorer-v2` 工作分支，尚未合入 `main`。
+
+### 当前架构
+
+```text
+Linux host supervisor / libvirt
+  ├─ 只读 Windows Server 2025 base qcow2
+  ├─ 每次运行独立 qcow2 overlay、UEFI NVRAM 与 TPM state
+  ├─ 受限 SPICE 可视桌面与定时截图
+  ├─ Runner：启动 Agent、保存完整运行记录与 evaluator 证据
+  └─ Scorer：机器结果评分 + 独立 Codex CLI 过程评审
+                         │
+                         ▼
+Windows guest（一次性）
+  └─ OpenCode 在用户真实可见的桌面会话中完成 PowerShell 5.1 任务
+```
+
+- OpenCode 必须运行在 SPICE 可见的 Windows 控制台中，不能由 SSH 在后台直接启动来替代桌面执行。
+- 可视模式禁用 SPICE clipboard、file transfer、共享目录、宿主文件系统挂载和 USB 重定向；SPICE 只用于观察与截图。
+- task setup、ground truth、evaluator 和 libvirt 控制面均由 guest 外部持有，Agent 停止后才执行隐藏 evaluator。
+- 基础镜像不提交到 Git；仓库只公开环境锁、domain 配置、runner、任务定义、证据格式与可复现日志。
+
+镜像环境为 Windows Server 2025 Standard Evaluation Desktop Experience，当前锁定 OpenCode 1.18.21、PowerShell 7.6.4 与 Git for Windows 2.55.0.windows.5。镜像与运行资料：
+
+- [环境锁](runtime-topo-windows/environment-lock.json)
+- [当前实施状态](runtime-topo-windows/STATUS.md)
+- [公开运行产物](runtime-topo-windows/artifacts/)
+- [PowerShell / 部署故障记录](runtime-topo-windows/docs/shell-command-lessons.md)
+
+### PowerShell 5.1 五题阶梯
+
+难度只用于排序；每道题都独立运行、独立评分，不生成跨题总分、平均分、最佳成绩或自动排名。
+
+| 难度 | Task | 核心能力 |
+|---:|---|---|
+| 1 | `ps001-utf8-output` | 精确 UTF-8、无 BOM、幂等写入 |
+| 2 | `ps002-path-quoting` | 特殊字符路径引用、可信工具来源、排除 shadow executable |
+| 3 | `ps003-native-exit` | native exit code、stdout/stderr 分流与失败传播 |
+| 4 | `ps004-parallel-merge` | 有上限的真实并发、稳定顺序与分片合并 |
+| 5 | `ps005-transactional-deploy` | 事务部署、校验失败回滚、路径穿越防护与临时目录清理 |
+
+### Runner 与 Scorer 分离
+
+工作分支上的 v2 流程不再让运行器顺手决定模型成绩：
+
+```text
+Runner evidence
+  ├─ metadata.json
+  ├─ orchestrator.jsonl / agent.jsonl / evaluator.jsonl
+  ├─ evaluator.json
+  └─ 交互进程身份与截图
+          │
+          ▼
+Offline Scorer
+  ├─ 结果 50：按 task.json 的 result_checks 机器等分
+  └─ 过程 50：Codex CLI Judge 阅读完整 runtime、evaluator 和机器结果分解
+          │
+          ▼
+每次运行独立 score.json + 根目录 score-report.json
+```
+
+过程 Judge 当前配置为 `gpt-5.6-luna`、`low` reasoning，只输出结构化的 `process_score`（0–50）和简短理由；它不能覆盖机器计算的结果分。总分只有恰好 `100` 才通过；有效证据但未满分归类为 `model_failure`，缺失或矛盾证据归类为 `infrastructure_failure` 且分数为 `null`。首次 Judge 结果按 run 与 Judge 身份缓存，重复离线评分不会反复调用模型。
+
+运行与评分是两个命令：
+
+```bash
+cd runtime-topo-windows
+
+python3 -m runner.run opencode-canary \
+  --config benchmark.yaml \
+  --output /mnt/PM983/windows-benchmark/runs \
+  --visual
+
+python3 -m runner.run score \
+  --config benchmark.yaml \
+  --output <run-root> \
+  [--task <task-id>]
+```
+
+### 当前验证状态
+
+- 工作分支 Python `compileall` 已通过，完整单元测试 **67/67** 通过。
+- 已在历史 `deepseek-v4-flash / low` 的 PS005 产物临时副本上调用真实 Codex CLI Judge：过程 `30/50`、机器结果 `25/50`、单题 `55/100`。这是对历史运行的 **v2 重评分**，不是新的 VM canary。
+- 下一次真实可视化 canary 仍需先满足活动且解锁的 Windows 控制台、Explorer/OpenCode `Medium (0x2000)` token 与零相关残留门禁；当前 README 不宣称该门禁或新 canary 已通过。
+
+### 接下来的测试
+
+1. 在合格的 Medium-integrity 可视桌面中运行新的 DeepSeek PS005 canary。
+2. 用同一个离线 Scorer 重评分已有 DeepSeek 五题运行，每题保留独立结果。
+3. 在相同镜像、五题、证据格式和 50/50 评分标准下扩展 Luna、Qwen 等模型。
+4. 持续公开可审计的单次运行产物；不以跨题聚合掩盖某道题的失败。
+
+## 项目中的两条路径
+
+这是一个面向 coding agent 的真实 Windows / PowerShell benchmark。仓库同时保留当前 KVM 主线与早期本地 PoC：
 
 - 根目录的确定性本地 PoC：执行 `W01/W02 × PowerShell 5.1/7` 四格矩阵，每格使用独立工作区和独立 Agent 调用；
 - [`runtime-topo-windows/`](runtime-topo-windows/)：在 KVM/QEMU/libvirt 上启动 Windows Server 2025，每次评测从固定只读基础镜像派生一次性 qcow2 overlay，并由 guest 外的 supervisor/evaluator 控制和验证。
 
-## 当前 KVM 里程碑
+## 已公开的 KVM 基线记录
 
 截至 2026-08-26，Windows Server 2025 Standard Evaluation Desktop Experience 基础环境已经冻结，锁定 OpenCode 1.18.21、PowerShell 7.6.4 和 Git for Windows 2.55.0.windows.5。基础 qcow2 的 SHA-256 为：
 
@@ -29,9 +125,13 @@ e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
 - 可审计环境锁：[`runtime-topo-windows/environment-lock.json`](runtime-topo-windows/environment-lock.json)
 - 公开运行日志：[`runtime-topo-windows/artifacts/`](runtime-topo-windows/artifacts/)
 - 部署与 shell 失败案例：[`runtime-topo-windows/docs/shell-command-lessons.md`](runtime-topo-windows/docs/shell-command-lessons.md)
-- 正式 benchmark 模板保持 headless；登录 overlay 为安装和认证临时开启 SPICE 剪贴板及文件传输。
+- 正式 benchmark 模板保持 headless；当前可视评测的 restricted SPICE 明确关闭剪贴板与文件传输。
 
 基础镜像不提交到 Git。仓库只保存配置、锁文件、runner、日志格式和可复现的状态说明。
+
+## Legacy 本地 PoC（W01/W02）
+
+以下内容保留早期确定性本地 PoC 的设计与结果，不代表当前 KVM 五题评分标准。
 
 `W01-quoting-shadowing` 覆盖：
 
@@ -42,7 +142,7 @@ e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
 
 `W02-runtime-recovery` 则要求 Agent 在 prompt 不透露 shell 的情况下，从 PS5.1 的 `&&` ParserError 或 PS7 的 `Get-PSSnapin` CommandNotFound 中识别实际 runtime、恢复并生成带 shell provenance 的产物。
 
-## 快速开始
+## Legacy 本地 PoC 快速开始
 
 确定性 Golden 基线：
 
@@ -102,7 +202,7 @@ run root
 
 初始脚本用字符串拼接调用 `cmd.exe /c`，特殊字符路径会破坏解析。只修正 quoting 仍会命中 PATH 前部的 shadow compiler：它返回 `0`，但产物 provenance 错误。正确方案需要安全地传递参数，并仅在当前构建进程中选择 trusted tool。
 
-## 双评分
+## Legacy 双评分
 
 为兼容旧结果，`score` 与 `legacyScore` 保留原最终状态 100 分：
 
@@ -122,7 +222,7 @@ run root
 
 分析器统一识别 ParserError、CommandNotFound、AccessDenied、tool/native 错误，以及 W01 的 shadow/compiler 负面 marker。每个错误向后观察诊断、编辑与成功动作，标注为 `ACK_RECOVER`、`IGNORED_ERROR` 或 `REPEATED_ERROR`。
 
-## 首个 Sol 四格基线
+## Legacy 首个 Sol 四格基线
 
 2026-08-23 使用 `wodex/gpt-5.6-sol`、每格 300 秒上限得到：
 
@@ -136,7 +236,7 @@ run root
 
 原始脱敏日志和完整逐项评分保存在本机忽略提交的 `.runs\20260823-071229-suite-f8f3baeb`。
 
-## 官方模型榜单
+## Legacy 官方模型榜单
 
 正式成绩只统计 GPT-5.6 Sol、Claude Opus 5、Qwen 3.8 Max、Kimi K3 和 DS V4 Pro。W01 双轨用于排名，W02 只作 sanity/runtime-awareness 对照；其他模型运行不进入正式成绩。
 
