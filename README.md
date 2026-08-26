@@ -111,15 +111,13 @@ python3 -m runner.run score \
 
 ## 已公开的 KVM 基线记录
 
-截至 2026-08-26，Windows Server 2025 Standard Evaluation Desktop Experience 基础环境已经冻结，锁定 OpenCode 1.18.21、PowerShell 7.6.4 和 Git for Windows 2.55.0.windows.5。基础 qcow2 的 SHA-256 为：
+截至 2026-08-24，Windows Server 2025 Standard Evaluation Desktop Experience 基础环境已经冻结，锁定 OpenCode 1.18.21、PowerShell 7.6.4 和 Git for Windows 2.55.0.windows.5。基础 qcow2 的 SHA-256 为：
 
 ```text
 e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
 ```
 
 外部 transport canary 已通过。首个真实模型 canary 使用 `opencode-go/gpt-5.6-luna`（`medium`）：精确输出、trusted provenance 与 shadow marker 排除均通过 evaluator；但 OpenCode CLI 未在 300 秒 supervisor 截止时间前退出，因此该次记录为 **EVALUATOR PASS / LIFECYCLE TIMEOUT**，不能视作完整生命周期通过。
-
-2026-08-26 的复跑已能保存 OpenCode 原始 stdout/stderr，并捕获到连接 `https://opencode.ai/zen/go/v1/responses` 失败的 `APIError`。复跑同时发现并修复了旧产物未清理和 evaluator PASS 被误当作整体 PASS 的问题；修复后的 `opencode-ps002-b7f42db4` 被正确记录为 lifecycle FAIL、evaluator FAIL、总分 0。修复前的评分均标记为非权威结果。
 
 - 当前实施状态：[`runtime-topo-windows/STATUS.md`](runtime-topo-windows/STATUS.md)
 - 可审计环境锁：[`runtime-topo-windows/environment-lock.json`](runtime-topo-windows/environment-lock.json)
