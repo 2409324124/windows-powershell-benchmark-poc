@@ -21,9 +21,15 @@
 e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
 ```
 
-当前 KVM 主流程已扩展为 PS001–PS005 五级 PowerShell 5.1 阶梯，并完成 Runner / Scorer 分离。Runner 负责真实可视化 Agent、隐藏 evaluator、截图与结构化证据；离线 Scorer 再用 Codex CLI 审查完整执行过程（50 分），用机器 evaluator 判断结果（50 分）。每次运行独立评分，只有恰好 100 分才通过，不做跨题平均、自动择优或排名。
+当前 KVM 主流程已扩展为 PS001–PS005 五级 PowerShell 5.1 阶梯，并完成 Runner / Process Judge / Scorer 三阶段分离：
 
-2026-08-26 的保留环境真实冒烟由用户在前台 SPICE Viewer 中确认可见。`opencode-go/deepseek-v4-flash`（`low`）完成 PS005，run ID 为 `opencode-ps005-e4d5148c`：Agent 正常退出、证据完整、八项机器检查全部通过（50/50），Codex CLI 过程评分 48/50，单题总分 98/100。严格规则下仍标记为 `model_failure`，但运行、网络、取证、评分、清理和保留环境链路均通过验收。
+1. Runner 在 SPICE 可见的 Medium-integrity Windows 桌面运行被测 OpenCode Agent；Agent 结束后、隐藏 evaluator 开始前冻结完整工作区和结构化日志。
+2. 独立 Windows OpenCode Judge 使用 `opencode-go/gpt-5.6-luna`（`low`）读取冻结副本与运行证据，并在 Windows PowerShell 5.1 中执行重放，给出五项各 0–10 分的过程评分。
+3. 本地 Scorer 只读合成过程分（50）与机器 evaluator 结果（50）。每次运行独立评分，只有恰好 100 分才通过，不做跨题平均、自动择优或排名。
+
+2026-08-27 的真实可视化 PS005 运行 `opencode-ps005-dd2a25f6` 使用 `opencode-go/deepseek-v4-flash`（`low`）。Agent 正常退出，冻结时序和截图完整，八项机器检查全部通过（50/50）；Windows GPT Judge 成功读取 evidence 并完成 PowerShell 重放，过程评分 47/50，单题总分 97/100。严格规则下标记为 `model_failure`：扣分来自未单独重放 rooted-path 变体、未真实诱发文件系统 swap 失败，以及最终声明略有过度概括，而不是环境或评分基础设施问题。
+
+同日较早的 snapshot 路径失败尝试 `opencode-ps005-9f0eebac` 仍作为独立 `infrastructure_failure` 保留，分数为 `null`；它不会与有效运行平均，也不会被自动替换或隐藏。
 
 历史 `gpt-5.6-luna` lifecycle timeout 与早期 OpenCode API 失败仍保留为回归材料，不再代表当前 KVM 评分标准。
 

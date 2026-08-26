@@ -1,4 +1,4 @@
-# Implementation Status — 2026-08-26
+# Implementation Status — 2026-08-27
 
 ## Completed
 
@@ -22,17 +22,20 @@
 - Three-stream logging implementation is present: orchestrator, agent, evaluator JSONL.
 - Normal and timeout paths preserve captured OpenCode bytes in `opencode.stdout.jsonl` and `opencode.stderr.log`; `TimeoutExpired` partial output is no longer discarded.
 - Task setup removes stale output before every run, and overall PASS now requires both lifecycle PASS and evaluator PASS.
-- Runner and Scorer are separate. The runner freezes evidence; the offline scorer combines a Codex CLI process review (50) with equally weighted machine checks (50), writing independent per-run scores without averaging or best-run selection.
+- Runner, Process Judge, and Scorer are separate. The runner freezes the complete after-Agent workspace before evaluator execution; a hidden Windows OpenCode Go GPT Judge reviews the disposable copy and performs PowerShell replay; the local scorer combines that process review (50) with equally weighted machine checks (50). Per-run scores remain independent with no averaging or best-run selection.
+- The Judge disposable workspace grants the Medium desktop user modify access while keeping `.wcb-judge/evidence.json` read-only. Both workspace and evidence ACLs are verified by regression tests.
 - Shell/PowerShell/libvirt failure cases from the deployment are documented in `docs/shell-command-lessons.md`.
 
 ## Test status
 
-- Retained visual PS005 smoke `opencode-ps005-e4d5148c` with `opencode-go/deepseek-v4-flash`, variant `low`: **VALID RUN / 98 OF 100**.
+- Visual PS005 run `opencode-ps005-dd2a25f6` with `opencode-go/deepseek-v4-flash`, variant `low`: **VALID RUN / 97 OF 100**.
   - The Viewer was mapped, focused, and confirmed visible by the user before launch.
-  - Agent exited `0`, did not time out, and produced complete run evidence.
+  - Agent exited `0`, did not time out, and produced complete v3 run evidence, including the after-Agent/before-evaluator workspace snapshot.
   - All eight transactional deployment evaluator checks passed for 50/50 machine-result points.
-  - Codex CLI (`gpt-5.6-luna`, low reasoning) awarded 48/50 process points. The strict rule requires exactly 100, so the classification is `model_failure`, not infrastructure failure.
+  - Windows OpenCode Go Judge (`opencode-go/gpt-5.6-luna`, `low`) read the evidence and completed successful PowerShell replays, awarding 47/50 process points. The strict rule requires exactly 100, so the classification is `model_failure`, not infrastructure failure.
+  - The three deducted process points reflect missing explicit rooted-path replay, no induced filesystem swap failure, and slightly overbroad final claims.
   - Scheduled tasks, launcher/OpenCode processes, and guest staging were absent after cleanup. The validated user-state overlay and Viewer remain active for subsequent tests.
+- Earlier run `opencode-ps005-9f0eebac`: **INFRASTRUCTURE FAILURE / NULL SCORE**. Agent and evaluator completed, but the first v3 snapshot attempted to create its temporary ZIP below already-cleaned launcher staging. The ZIP now uses Windows `%TEMP%`; the failed attempt remains a separate run and is neither averaged nor selected away.
 - Transport smoke test: **PASS**. Exact UTF-8 bytes and CRLF were checked externally.
 - Overlay boot and SSH: **PASS**.
 - Historical OpenCode canary `opencode-ps002-53afe878` with `opencode-go/gpt-5.6-luna`, variant `medium`: **EVALUATOR PASS / LIFECYCLE TIMEOUT**.
@@ -60,7 +63,5 @@
 
 ## Immediate next step
 
-Commit and publish the separated Runner/Scorer implementation on
-`codex/runner-scorer-v2`, then run the remaining task/model matrix from fresh
-run directories while keeping the validated desktop environment available for
-human-observed demonstrations.
+Run the remaining task/model matrix from fresh run directories while keeping
+the validated desktop environment available for human-observed demonstrations.

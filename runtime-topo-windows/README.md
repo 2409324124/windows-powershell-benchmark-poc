@@ -34,33 +34,61 @@ Valid task IDs are `ps001-utf8-output`, `ps002-path-quoting`,
 `ps003-native-exit`, `ps004-parallel-merge`, and
 `ps005-transactional-deploy`.
 
-## Separate Runner and Scorer
+## Separate Runner, Process Judge, and Scorer
 
 `opencode-canary` performs setup, launches the visible Agent, runs the hidden
-evaluator, captures evidence, and cleans the guest. It does not decide whether
-the model passed. Once complete evidence has been collected, the command exits
-successfully even when the evaluator reports that the model answer is wrong.
+evaluator, captures evidence, and cleans the guest. Immediately after the Agent
+stops and before evaluator execution, evidence schema v3 stores the complete
+workspace as `workspace-after-agent.zip`. The runner does not assign points and
+exits successfully once complete evidence is durable, even when the model
+answer is wrong.
 
-Score one or more completed runs afterward without launching OpenCode again:
+Run the independent process review afterward. This launches a hidden OpenCode
+process in the same Medium-integrity Windows console, expands the frozen
+workspace into a disposable writable copy, and requires at least one successful
+Windows PowerShell replay:
+
+```bash
+python3 -m runner.run process-judge \
+  --config benchmark.yaml \
+  --output /mnt/PM983/windows-benchmark/runs \
+  --task ps005-transactional-deploy
+```
+
+The configured Judge is `opencode-go/gpt-5.6-luna` with variant `low`. Its five
+fixed criteria are completion/target, scope/correctness, verification quality,
+failure recovery, and claim accuracy. Each criterion is worth 0–10 points. The
+Judge result, identity, reasons, evidence references, and PowerShell replay exit
+codes are stored in `process-judge.json`.
+
+Finally, compose one or more completed runs without launching a model again:
 
 ```bash
 python3 -m runner.run score \
-  --config benchmark.yaml \
-  --output /mnt/PM983/windows-benchmark/runs/task-ladder \
+  --output /mnt/PM983/windows-benchmark/runs \
   --task ps005-transactional-deploy
 ```
 
 Each run receives an independent `score.json`. The root `score-report.json`
 lists runs without averaging, ranking, or selecting a best attempt. Version 2
-assigns 50 points to a Codex CLI review of the complete runtime record and 50
-points to equally weighted machine evaluator checks. Only exactly 100 points is
-a pass. Valid but imperfect work is `model_failure`; missing or contradictory
-evidence produces a null score and `infrastructure_failure`.
+assigns 50 points to the Windows OpenCode process review and 50 points to
+equally weighted machine evaluator checks. Only exactly 100 points is a pass.
+Valid but imperfect work is `model_failure`; missing or contradictory evidence
+produces a null score and `infrastructure_failure`.
 
-The retained visual smoke `opencode-ps005-e4d5148c` used
-`opencode-go/deepseek-v4-flash` with variant `low`. A human confirmed the
-SPICE Viewer window before launch. All eight PS005 machine checks passed
-(50/50); the Codex CLI process review awarded 48/50, for 98/100 overall.
+The validated visual run `opencode-ps005-dd2a25f6` used
+`opencode-go/deepseek-v4-flash` with variant `low`. The SPICE screenshots show
+the visible Agent window and its clean exit. All eight PS005 machine checks
+passed (50/50); the Windows OpenCode Go GPT Judge awarded 47/50 process points,
+for 97/100 overall. The Judge successfully read the structured evidence and
+replayed both evidence parsing and a clean transactional deployment under
+Windows PowerShell.
+
+The process Judge receives the complete frozen benchmark workspace, including
+files not declared as edit targets. It may send their contents to the configured
+external model provider. Use only purpose-built benchmark fixtures with this
+mode; do not point it at a workspace containing real credentials or private
+data.
 
 ## Visual debug mode
 
