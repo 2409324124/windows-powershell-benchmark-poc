@@ -3,5 +3,13 @@
   "id": "ps004-parallel-merge",
   "difficulty": 4,
   "shell": "Windows PowerShell 5.1",
-  "workspace": "C:\\WCB\\tasks\\PS004 Parallel Merge"
+  "workspace": "C:\\WCB\\tasks\\PS004 Parallel Merge",
+  "target_files": ["build.ps1"],
+  "result_checks": [
+    {"id": "powershell-51-exit", "field": "powershell_51_exit", "expected": 0},
+    {"id": "aggregate-exact", "field": "aggregate_exact", "expected": true},
+    {"id": "fragments-exact", "field": "fragments_exact", "expected": true},
+    {"id": "concurrent", "field": "concurrent", "expected": true},
+    {"id": "throttle-respected", "field": "throttle_respected", "expected": true}
+  ]
 }

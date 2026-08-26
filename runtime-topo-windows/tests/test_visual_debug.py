@@ -625,6 +625,27 @@ class CanaryOutputTests(unittest.TestCase):
             'runtime': {'agent_timeout_seconds': timeout},
         }
 
+    def test_control_user_and_interactive_desktop_user_are_separate(self) -> None:
+        config = self.config(0)
+        config['guest']['interactive_user'] = 'benchmark'
+        target = fake_ssh_target(
+            subprocess.CompletedProcess([], 0, b'', b''),
+            subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
+        )
+        interactive = FakeInteractiveOpenCode(
+            result={'exit_code': 0}, stdout=b'', stderr=b'',
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch('runner.real_canary.SshTarget', return_value=target) as ssh_type, \
+                    patch('runner.real_canary.InteractiveOpenCode', return_value=interactive) as interactive_type, \
+                    patch('runner.real_canary.require_visual_domain'):
+                self.assertEqual(run(config, ROOT, Path(temporary), visual=True), 0)
+
+        self.assertEqual(ssh_type.call_args.kwargs['user'], 'Administrator')
+        self.assertIs(interactive_type.call_args.args[0], target)
+        self.assertEqual(interactive_type.call_args.args[1], 'benchmark')
+
     def test_timeout_saves_partial_output_and_all_artifact_streams(self) -> None:
         setup = subprocess.CompletedProcess([], 0, b'', b'')
         evaluation = subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b'')
@@ -709,6 +730,11 @@ class CanaryOutputTests(unittest.TestCase):
             run_dir = next(output.iterdir())
             self.assertTrue((run_dir / 'screenshots/001-agent-exit.png').is_file())
             self.assertEqual((run_dir / 'opencode.stdout.jsonl').read_bytes(), b'{"type":"done"}\n')
+            self.assertFalse((run_dir / 'score.json').exists())
+            metadata = json.loads((run_dir / 'metadata.json').read_text())
+            self.assertEqual(metadata['evidence_schema'], 'wcb.run-evidence/v2')
+            self.assertEqual(metadata['workspace'], r'C:\WCB\tasks\PS002 Project (quoted)')
+            self.assertNotIn('passed', metadata)
             self.assertFalse(interactive.terminated)
             self.assertTrue(interactive.cleaned)
 

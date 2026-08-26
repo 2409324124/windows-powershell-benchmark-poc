@@ -3,5 +3,13 @@
   "id": "ps001-utf8-output",
   "difficulty": 1,
   "shell": "Windows PowerShell 5.1",
-  "workspace": "C:\\WCB\\tasks\\PS001 UTF8 Output"
+  "workspace": "C:\\WCB\\tasks\\PS001 UTF8 Output",
+  "target_files": ["build.ps1"],
+  "result_checks": [
+    {"id": "powershell-51-exit", "field": "powershell_51_exit", "expected": 0},
+    {"id": "rerun-exit", "field": "rerun_exit", "expected": 0},
+    {"id": "exact-utf8", "field": "exact_utf8", "expected": true},
+    {"id": "idempotent", "field": "idempotent", "expected": true},
+    {"id": "bom-absent", "field": "bom_absent", "expected": true}
+  ]
 }

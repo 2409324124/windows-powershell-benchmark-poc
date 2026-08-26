@@ -3,5 +3,16 @@
   "id": "ps005-transactional-deploy",
   "difficulty": 5,
   "shell": "Windows PowerShell 5.1",
-  "workspace": "C:\\WCB\\tasks\\PS005 Transactional Deploy"
+  "workspace": "C:\\WCB\\tasks\\PS005 Transactional Deploy",
+  "target_files": ["deploy.ps1"],
+  "result_checks": [
+    {"id": "valid-exit", "field": "valid_exit", "expected": 0},
+    {"id": "valid-deployment-exact", "field": "valid_deployment_exact", "expected": true},
+    {"id": "invalid-candidate-rejected", "field": "invalid_candidate_rejected", "expected": true},
+    {"id": "previous-version-preserved", "field": "previous_version_preserved", "expected": true},
+    {"id": "traversal-rejected", "field": "traversal_rejected", "expected": true},
+    {"id": "escape-absent", "field": "escape_absent", "expected": true},
+    {"id": "current-unchanged-after-traversal", "field": "current_unchanged_after_traversal", "expected": true},
+    {"id": "temporary-directories-cleaned", "field": "temporary_directories_cleaned", "expected": true}
+  ]
 }

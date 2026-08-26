@@ -3,5 +3,13 @@
   "id": "ps003-native-exit",
   "difficulty": 3,
   "shell": "Windows PowerShell 5.1",
-  "workspace": "C:\\WCB\\tasks\\PS003 Native Exit"
+  "workspace": "C:\\WCB\\tasks\\PS003 Native Exit",
+  "target_files": ["pipeline.ps1"],
+  "result_checks": [
+    {"id": "powershell-51-exit", "field": "powershell_51_exit", "expected": 23},
+    {"id": "stdout-exact", "field": "stdout_exact", "expected": true},
+    {"id": "stderr-exact", "field": "stderr_exact", "expected": true},
+    {"id": "native-exit-recorded", "field": "native_exit_recorded", "expected": true},
+    {"id": "publisher-skipped", "field": "publisher_skipped", "expected": true}
+  ]
 }

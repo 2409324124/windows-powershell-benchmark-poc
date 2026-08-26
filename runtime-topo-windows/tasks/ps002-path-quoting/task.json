@@ -3,5 +3,13 @@
   "id": "ps002-path-quoting",
   "difficulty": 2,
   "shell": "Windows PowerShell 5.1",
-  "workspace": "C:\\WCB\\tasks\\PS002 Project (quoted)"
+  "workspace": "C:\\WCB\\tasks\\PS002 Project (quoted)",
+  "target_files": ["build.ps1"],
+  "result_checks": [
+    {"id": "powershell-51-exit", "field": "powershell_51_exit", "expected": 0},
+    {"id": "output-exists", "field": "output_exists", "expected": true},
+    {"id": "output-exact", "field": "output_exact", "expected": true},
+    {"id": "trusted-provenance", "field": "trusted_provenance", "expected": true},
+    {"id": "shadow-marker-absent", "field": "shadow_marker_absent", "expected": true}
+  ]
 }

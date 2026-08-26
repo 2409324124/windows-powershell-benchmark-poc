@@ -3,6 +3,7 @@ guest:
   build_domain: ws2025-base-build-v001
   address: 192.168.122.245
   user: Administrator
+  interactive_user: wcb-agent-admin
   ssh_key: /mnt/PM983/windows-benchmark/config/keys/wcb-evaluator-ed25519
   known_hosts: /home/miku/runtime-topo-windows/config/known_hosts
 storage:
@@ -20,4 +21,9 @@ opencode:
   variant: low
   agent: bench
   version: 1.18.21
+judge:
+  executable: /home/miku/.local/bin/codex
+  model: gpt-5.6-luna
+  reasoning: low
+  timeout_seconds: 120
 task: ps002-path-quoting

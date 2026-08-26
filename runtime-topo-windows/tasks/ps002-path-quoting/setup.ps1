@@ -2,6 +2,8 @@ $ErrorActionPreference = 'Stop'
 $root = 'C:\WCB\tasks\PS002 Project (quoted)'
 $trusted = Join-Path $root 'Trusted Tools\compiler.exe'
 $shadow = Join-Path $root 'Shadow\compiler.exe'
+Remove-Item -LiteralPath (Join-Path $root 'out') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $root 'shadow-used.txt') -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Split-Path $trusted), (Split-Path $shadow), (Join-Path $root 'src') | Out-Null
 Set-Content -LiteralPath (Join-Path $root 'src\input file.txt') -Value 'benchmark-input' -Encoding ascii
 

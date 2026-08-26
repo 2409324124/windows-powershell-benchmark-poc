@@ -15,13 +15,17 @@
 
 ## 当前 KVM 里程碑
 
-截至 2026-08-24，Windows Server 2025 Standard Evaluation Desktop Experience 基础环境已经冻结，锁定 OpenCode 1.18.21、PowerShell 7.6.4 和 Git for Windows 2.55.0.windows.5。基础 qcow2 的 SHA-256 为：
+截至 2026-08-26，Windows Server 2025 Standard Evaluation Desktop Experience 基础环境已经冻结，锁定 OpenCode 1.18.21、PowerShell 7.6.4 和 Git for Windows 2.55.0.windows.5。基础 qcow2 的 SHA-256 为：
 
 ```text
 e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
 ```
 
-外部 transport canary 已通过。首个真实模型 canary 使用 `opencode-go/gpt-5.6-luna`（`medium`）：精确输出、trusted provenance 与 shadow marker 排除均通过 evaluator；但 OpenCode CLI 未在 300 秒 supervisor 截止时间前退出，因此该次记录为 **EVALUATOR PASS / LIFECYCLE TIMEOUT**，不能视作完整生命周期通过。
+当前 KVM 主流程已扩展为 PS001–PS005 五级 PowerShell 5.1 阶梯，并完成 Runner / Scorer 分离。Runner 负责真实可视化 Agent、隐藏 evaluator、截图与结构化证据；离线 Scorer 再用 Codex CLI 审查完整执行过程（50 分），用机器 evaluator 判断结果（50 分）。每次运行独立评分，只有恰好 100 分才通过，不做跨题平均、自动择优或排名。
+
+2026-08-26 的保留环境真实冒烟由用户在前台 SPICE Viewer 中确认可见。`opencode-go/deepseek-v4-flash`（`low`）完成 PS005，run ID 为 `opencode-ps005-e4d5148c`：Agent 正常退出、证据完整、八项机器检查全部通过（50/50），Codex CLI 过程评分 48/50，单题总分 98/100。严格规则下仍标记为 `model_failure`，但运行、网络、取证、评分、清理和保留环境链路均通过验收。
+
+历史 `gpt-5.6-luna` lifecycle timeout 与早期 OpenCode API 失败仍保留为回归材料，不再代表当前 KVM 评分标准。
 
 - 当前实施状态：[`runtime-topo-windows/STATUS.md`](runtime-topo-windows/STATUS.md)
 - 可审计环境锁：[`runtime-topo-windows/environment-lock.json`](runtime-topo-windows/environment-lock.json)

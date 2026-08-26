@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import time
 import uuid
@@ -12,6 +13,52 @@ from runner.opencode import (
 )
 from runner.report import JsonlLog, utc_now, write_bytes_atomic, write_json_atomic
 from runner.vm import ScreenshotMonitor, VisualModeError, require_visual_domain
+
+
+def _as_bytes(value: bytes | str | None) -> bytes:
+    if value is None:
+        return b''
+    if isinstance(value, bytes):
+        return value
+    return value.encode('utf-8', 'replace')
+
+
+def _record_agent_process(
+    run_dir: Path,
+    agent_log: JsonlLog,
+    *,
+    stdout: bytes | str | None,
+    stderr: bytes | str | None,
+    exit_code: int,
+    timed_out: bool,
+    timeout_seconds: int,
+) -> None:
+    raw_stdout = _as_bytes(stdout)
+    raw_stderr = _as_bytes(stderr)
+    write_bytes_atomic(run_dir / 'opencode.stdout.jsonl', raw_stdout)
+    write_bytes_atomic(run_dir / 'opencode.stderr.log', raw_stderr)
+    _record_stdout(agent_log, raw_stdout)
+    fields = {
+        'exit_code': exit_code,
+        'timed_out': timed_out,
+        'stderr': raw_stderr.decode('utf-8', 'replace'),
+    }
+    if timed_out:
+        fields['timeout_seconds'] = timeout_seconds
+    agent_log.emit('process_finished', **fields)
+
+
+def _run_agent(
+    target: SshTarget,
+    command: str,
+    timeout_seconds: int,
+) -> tuple[bytes | str | None, bytes | str | None, int, bool]:
+    """Compatibility helper for the legacy direct-SSH output capture tests."""
+    try:
+        result = target.run(command, timeout=timeout_seconds)
+        return result.stdout, result.stderr, result.returncode, False
+    except subprocess.TimeoutExpired as error:
+        return error.stdout, error.stderr, 124, True
 
 
 def load_task(project_root: Path, task_id: str) -> tuple[Path, dict]:
@@ -61,7 +108,9 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         identity=Path(guest['ssh_key']), known_hosts=Path(guest['known_hosts']),
     )
     launcher = (project_root / 'config/run-interactive-opencode.ps1').read_text(encoding='utf-8')
-    interactive = InteractiveOpenCode(target, guest['user'], launcher)
+    interactive = InteractiveOpenCode(
+        target, guest.get('interactive_user', guest['user']), launcher,
+    )
     try:
         console = interactive.preflight()
     except InteractiveAgentError as error:
@@ -86,7 +135,7 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     )
     orchestrator.emit('task_setup', exit_code=setup.returncode, stdout=setup.stdout.decode('utf-8', 'replace'), stderr=setup.stderr.decode('utf-8', 'replace'))
     if setup.returncode != 0:
-        orchestrator.emit('run_finished', passed=False, reason='setup failed')
+        orchestrator.emit('run_finished', evidence_complete=False, reason='setup failed')
         return 3
 
     prompt = (task / 'prompt.md').read_text(encoding='utf-8').strip()
@@ -184,6 +233,7 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         orchestrator.emit(
             'agent_started', model=model, variant=variant, executable=executable,
             pid=process.pid, session_id=process.session_id, task_name=process.task_name,
+            automatic=True, input_channel='none',
         )
 
         if visual:
@@ -270,11 +320,12 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
 
     collect_auth_best_effort()
 
-    _record_stdout(agent_log, raw_stdout_bytes)
-    if timed_out:
-        agent_log.emit('process_timeout', timeout_seconds=config['runtime']['agent_timeout_seconds'])
-    else:
-        agent_log.emit('process_exit', exit_code=agent_exit, stderr=raw_stderr_bytes.decode('utf-8', 'replace'))
+    _record_agent_process(
+        run_dir, agent_log,
+        stdout=raw_stdout_bytes, stderr=raw_stderr_bytes,
+        exit_code=agent_exit, timed_out=timed_out,
+        timeout_seconds=config['runtime']['agent_timeout_seconds'],
+    )
     orchestrator.emit('agent_finished', exit_code=agent_exit, timed_out=timed_out)
 
     if screenshots is not None:
@@ -288,17 +339,21 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         eval_json = json.loads(eval_stdout.splitlines()[0])
     except (json.JSONDecodeError, IndexError):
         eval_json = {'passed': False, 'raw': eval_stdout}
-    passed = evaluation.returncode == 0 and bool(eval_json.get('passed'))
     evaluator_log.emit('evaluation', exit_code=evaluation.returncode, result=eval_json, stderr=evaluation.stderr.decode('utf-8', 'replace'))
     metadata = {
         'schema': 'wcb.run-metadata/v1', 'run_id': run_id, 'task': task_id,
+        'evidence_schema': 'wcb.run-evidence/v2',
         'domain': domain, 'base_sha256': 'e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4',
-        'model': model, 'variant': variant, 'agent_exit': agent_exit, 'passed': passed,
+        'model': model, 'variant': variant, 'agent_exit': agent_exit,
+        'workspace': workspace,
+        'timed_out': timed_out, 'evaluator_exit': evaluation.returncode,
         'finished_at': utc_now(),
     }
     write_json_atomic(run_dir / 'metadata.json', metadata)
     write_json_atomic(run_dir / 'evaluator.json', eval_json)
-    write_json_atomic(run_dir / 'score.json', {'passed': passed, 'score': 1 if passed else 0})
-    orchestrator.emit('run_finished', passed=passed)
-    print(json.dumps({'run_id': run_id, 'run_dir': str(run_dir), 'passed': passed, 'agent_exit': agent_exit}))
-    return 0 if passed else 1
+    orchestrator.emit('run_finished', evidence_complete=True)
+    print(json.dumps({
+        'run_id': run_id, 'run_dir': str(run_dir),
+        'evidence_complete': True, 'agent_exit': agent_exit,
+    }))
+    return 0
