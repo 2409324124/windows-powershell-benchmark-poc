@@ -53,8 +53,12 @@ class OpenCodeJudgeOutputTests(unittest.TestCase):
         script = target.upload_bytes.call_args.args[0].decode('utf-8-sig')
         self.assertIn("$modifyGrant = '*' + $judgeSid + ':(OI)(CI)M'", script)
         self.assertIn('icacls.exe $workspace /grant:r $modifyGrant /T /C', script)
-        self.assertIn("$readGrant = '*' + $judgeSid + ':(OI)(CI)RX'", script)
+        self.assertIn(
+            "$readDirectoryGrant = '*' + $judgeSid + ':(OI)(CI)RX'", script,
+        )
         self.assertIn('icacls.exe $evidenceRoot /inheritance:r /grant:r', script)
+        self.assertIn("$readFileGrant = '*' + $judgeSid + ':R'", script)
+        self.assertIn('icacls.exe $evidencePath /inheritance:r /grant:r', script)
 
     def test_accepts_exact_json_after_successful_windows_replay(self) -> None:
         expected = judge_result(9)

@@ -285,11 +285,16 @@ try {{
     $evidenceRoot = Join-Path $workspace '.wcb-judge'
     Remove-Item -LiteralPath $evidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
-    Move-Item -LiteralPath $evidenceSource -Destination (Join-Path $evidenceRoot 'evidence.json') -Force
-    $readGrant = '*' + $judgeSid + ':(OI)(CI)RX'
+    $evidencePath = Join-Path $evidenceRoot 'evidence.json'
+    Move-Item -LiteralPath $evidenceSource -Destination $evidencePath -Force
+    $readDirectoryGrant = '*' + $judgeSid + ':(OI)(CI)RX'
     & icacls.exe $evidenceRoot /inheritance:r /grant:r `
-        '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' $readGrant /T /C | Out-Null
-    if ($LASTEXITCODE -ne 0) {{ throw "icacls evidence grant failed: $LASTEXITCODE" }}
+        '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' $readDirectoryGrant | Out-Null
+    if ($LASTEXITCODE -ne 0) {{ throw "icacls evidence directory grant failed: $LASTEXITCODE" }}
+    $readFileGrant = '*' + $judgeSid + ':R'
+    & icacls.exe $evidencePath /inheritance:r /grant:r `
+        '*S-1-5-32-544:F' '*S-1-5-18:F' $readFileGrant | Out-Null
+    if ($LASTEXITCODE -ne 0) {{ throw "icacls evidence file grant failed: $LASTEXITCODE" }}
 }} finally {{
     Remove-Item -LiteralPath $archiveSource,$evidenceSource -Force -ErrorAction SilentlyContinue
 }}
