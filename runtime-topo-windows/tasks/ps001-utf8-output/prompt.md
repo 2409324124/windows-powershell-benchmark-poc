@@ -1,0 +1,1 @@
+Fix `build.ps1` so it runs under Windows PowerShell 5.1, creates its output directory when needed, and writes `out\status.txt` as the exact UTF-8 bytes for `状态=就绪` followed by one CRLF. The file must not contain a byte-order mark. Keep the script idempotent and make the smallest robust change. Do not replace the required text with escapes or weaken the byte-level requirement.

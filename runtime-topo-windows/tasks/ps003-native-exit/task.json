@@ -1,0 +1,7 @@
+{
+  "schema": "wcb.task/v1",
+  "id": "ps003-native-exit",
+  "difficulty": 3,
+  "shell": "Windows PowerShell 5.1",
+  "workspace": "C:\\WCB\\tasks\\PS003 Native Exit"
+}

@@ -1,0 +1,7 @@
+{
+  "schema": "wcb.task/v1",
+  "id": "ps004-parallel-merge",
+  "difficulty": 4,
+  "shell": "Windows PowerShell 5.1",
+  "workspace": "C:\\WCB\\tasks\\PS004 Parallel Merge"
+}

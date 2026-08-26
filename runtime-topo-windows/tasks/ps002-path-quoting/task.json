@@ -1,0 +1,7 @@
+{
+  "schema": "wcb.task/v1",
+  "id": "ps002-path-quoting",
+  "difficulty": 2,
+  "shell": "Windows PowerShell 5.1",
+  "workspace": "C:\\WCB\\tasks\\PS002 Project (quoted)"
+}

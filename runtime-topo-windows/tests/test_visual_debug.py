@@ -604,6 +604,13 @@ class FakeScreenshots:
         self._write('001-evaluator-before.png')
 
 
+def fake_ssh_target(*results):
+    target = Mock()
+    target.upload_bytes.return_value = subprocess.CompletedProcess([], 0, b'', b'')
+    target.run.side_effect = list(results)
+    return target
+
+
 class CanaryOutputTests(unittest.TestCase):
     def config(self, timeout: int) -> dict:
         return {
@@ -621,8 +628,7 @@ class CanaryOutputTests(unittest.TestCase):
     def test_timeout_saves_partial_output_and_all_artifact_streams(self) -> None:
         setup = subprocess.CompletedProcess([], 0, b'', b'')
         evaluation = subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b'')
-        target = Mock()
-        target.run.side_effect = [setup, evaluation]
+        target = fake_ssh_target(setup, evaluation)
         interactive = FakeInteractiveOpenCode(
             result=None, stdout=b'{"type":"partial"}\n', stderr=b'waiting',
         )
@@ -653,11 +659,10 @@ class CanaryOutputTests(unittest.TestCase):
 
     def test_timeout_captures_before_output_event_and_termination(self) -> None:
         trace = []
-        target = Mock()
-        target.run.side_effect = [
+        target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
             subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
-        ]
+        )
         interactive = FakeInteractiveOpenCode(
             result=None, stdout=b'partial', stderr=b'waiting', trace=trace,
         )
@@ -687,11 +692,10 @@ class CanaryOutputTests(unittest.TestCase):
         )
 
     def test_normal_exit_collects_output_without_termination(self) -> None:
-        target = Mock()
-        target.run.side_effect = [
+        target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
             subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
-        ]
+        )
         interactive = FakeInteractiveOpenCode(
             result={'exit_code': 0}, stdout=b'{"type":"done"}\n', stderr=b'',
         )
@@ -709,11 +713,10 @@ class CanaryOutputTests(unittest.TestCase):
             self.assertTrue(interactive.cleaned)
 
     def test_inspect_failure_still_cleans_verified_launcher_and_runs_evaluator(self) -> None:
-        target = Mock()
-        target.run.side_effect = [
+        target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
             subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
-        ]
+        )
         interactive = FakeInteractiveOpenCode(
             result=None, stdout=b'', stderr=b'',
             inspect_error=InteractiveAgentError('Agent identity capture failed'),
@@ -737,11 +740,10 @@ class CanaryOutputTests(unittest.TestCase):
 
     def test_timeout_collection_and_status_failure_do_not_skip_event_or_evaluator(self) -> None:
         trace = []
-        target = Mock()
-        target.run.side_effect = [
+        target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
             subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
-        ]
+        )
         interactive = FakeInteractiveOpenCode(
             result=None, stdout=b'', stderr=b'', trace=trace,
             collect_error=InteractiveAgentError('output unavailable'),
@@ -783,11 +785,10 @@ class CanaryOutputTests(unittest.TestCase):
         )
 
     def test_ssh_never_directly_launches_opencode(self) -> None:
-        target = Mock()
-        target.run.side_effect = [
+        target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
             subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
-        ]
+        )
         interactive = FakeInteractiveOpenCode(
             result={'exit_code': 0}, stdout=b'', stderr=b'',
         )
@@ -801,11 +802,10 @@ class CanaryOutputTests(unittest.TestCase):
             self.assertNotIn(' auth list', call.args[0].casefold())
 
     def test_cleanup_refusal_preserves_diagnostics(self) -> None:
-        target = Mock()
-        target.run.side_effect = [
+        target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
             subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
-        ]
+        )
         interactive = FakeInteractiveOpenCode(
             result={'exit_code': 0}, stdout=b'', stderr=b'',
         )
@@ -830,11 +830,10 @@ class CanaryOutputTests(unittest.TestCase):
             self.assertIn('interactive_cleanup_refused', events)
 
     def test_partial_stage_failure_runs_diagnostics_and_preserves_staging(self) -> None:
-        target = Mock()
-        target.run.side_effect = [
+        target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
             subprocess.CompletedProcess([], 0, b'{"passed":true}\n', b''),
-        ]
+        )
         interactive = FakeInteractiveOpenCode(
             result=None, stdout=b'', stderr=b'',
             stage_error=InteractiveAgentError('staging write failed'),

@@ -160,7 +160,10 @@ def _execute_control_script(
         raise InteractiveAgentError(f"control script upload failed: {stderr or f'exit {upload.returncode}'}")
     loader = (
         f"$path=Join-Path $env:USERPROFILE {_ps_literal(remote_name)};"
-        "try { & $path } finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }"
+        "$code=0;"
+        "try { & $path; if (-not $?) { if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { $code=[int]$LASTEXITCODE } else { $code=1 } } } "
+        "finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue };"
+        "exit $code"
     )
     return target.run(_control_powershell(loader), timeout=timeout)
 

@@ -65,12 +65,15 @@ def main() -> int:
     parser.add_argument("command", choices=("transport-canary", "opencode-canary"))
     parser.add_argument("--config", type=Path, default=ROOT / "benchmark.yaml")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--task", help="override the task id from benchmark.yaml")
     parser.add_argument(
         "--visual", action="store_true",
         help="capture host-side screenshots from a visual SPICE domain",
     )
     args = parser.parse_args()
     config = load_config(args.config)
+    if args.task:
+        config["task"] = args.task
     output = args.output or Path(config["storage"]["runs"])
     if args.command == "transport-canary":
         return transport_canary(config, output)

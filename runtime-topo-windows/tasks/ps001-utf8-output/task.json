@@ -1,0 +1,7 @@
+{
+  "schema": "wcb.task/v1",
+  "id": "ps001-utf8-output",
+  "difficulty": 1,
+  "shell": "Windows PowerShell 5.1",
+  "workspace": "C:\\WCB\\tasks\\PS001 UTF8 Output"
+}

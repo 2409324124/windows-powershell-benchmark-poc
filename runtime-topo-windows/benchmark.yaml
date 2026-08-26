@@ -16,8 +16,8 @@ runtime:
   keep_on_failure: false
 opencode:
   executable: 'C:\Program Files\OpenCode\1.18.21\opencode.exe'
-  model: opencode-go/gpt-5.6-luna
-  variant: medium
+  model: opencode-go/deepseek-v4-flash
+  variant: low
   agent: bench
   version: 1.18.21
 task: ps002-path-quoting

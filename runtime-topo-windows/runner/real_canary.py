@@ -6,9 +6,28 @@ import time
 import uuid
 from pathlib import Path
 
-from runner.opencode import InteractiveAgentError, InteractiveOpenCode, SshTarget, encoded_powershell
+from runner.opencode import (
+    InteractiveAgentError, InteractiveOpenCode, SshTarget,
+    _execute_control_script, encoded_powershell,
+)
 from runner.report import JsonlLog, utc_now, write_bytes_atomic, write_json_atomic
 from runner.vm import ScreenshotMonitor, VisualModeError, require_visual_domain
+
+
+def load_task(project_root: Path, task_id: str) -> tuple[Path, dict]:
+    if not task_id or Path(task_id).name != task_id:
+        raise ValueError(f'invalid task id: {task_id!r}')
+    task = project_root / 'tasks' / task_id
+    manifest_path = task / 'task.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    if manifest.get('schema') != 'wcb.task/v1' or manifest.get('id') != task_id:
+        raise ValueError(f'invalid task manifest: {manifest_path}')
+    if not isinstance(manifest.get('workspace'), str) or not manifest['workspace'].startswith('C:\\WCB\\tasks\\'):
+        raise ValueError(f'invalid task workspace: {manifest_path}')
+    for filename in ('setup.ps1', 'prompt.md', 'evaluate.ps1'):
+        if not (task / filename).is_file():
+            raise ValueError(f'task {task_id} is missing {filename}')
+    return task, manifest
 
 
 def _record_stdout(agent_log: JsonlLog, raw_stdout: bytes) -> None:
@@ -21,6 +40,13 @@ def _record_stdout(agent_log: JsonlLog, raw_stdout: bytes) -> None:
 
 
 def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = False) -> int:
+    task_id = str(config.get('task', 'ps002-path-quoting'))
+    try:
+        task, task_manifest = load_task(project_root, task_id)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f'Unable to load benchmark task {task_id}: {error}', file=sys.stderr)
+        return 2
+
     domain = 'wcb-canary-transport-001'
     if visual:
         try:
@@ -42,19 +68,22 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
         print(error, file=sys.stderr)
         return 2
 
-    run_id = 'opencode-ps002-' + uuid.uuid4().hex[:8]
+    task_code = task_id.split('-', 1)[0]
+    run_id = f'opencode-{task_code}-' + uuid.uuid4().hex[:8]
     run_dir = output_root / run_id
     orchestrator = JsonlLog(run_dir / 'orchestrator.jsonl', 'orchestrator')
     agent_log = JsonlLog(run_dir / 'agent.jsonl', 'agent')
     evaluator_log = JsonlLog(run_dir / 'evaluator.jsonl', 'evaluator')
-    task = project_root / 'tasks/ps002-path-quoting'
-    workspace = r'C:\WCB\tasks\PS002 Project (quoted)'
+    workspace = task_manifest['workspace']
     orchestrator.emit(
-        'run_started', run_id=run_id, domain=domain, task='ps002-path-quoting',
+        'run_started', run_id=run_id, domain=domain, task=task_id,
         visual=visual, console_session_id=console.session_id,
     )
 
-    setup = target.run(encoded_powershell((task / 'setup.ps1').read_text(encoding='utf-8')), timeout=90)
+    setup = _execute_control_script(
+        target, (task / 'setup.ps1').read_text(encoding='utf-8'),
+        f'wcb-{run_id}-task-setup.ps1', timeout=90,
+    )
     orchestrator.emit('task_setup', exit_code=setup.returncode, stdout=setup.stdout.decode('utf-8', 'replace'), stderr=setup.stderr.decode('utf-8', 'replace'))
     if setup.returncode != 0:
         orchestrator.emit('run_finished', passed=False, reason='setup failed')
@@ -251,7 +280,9 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     if screenshots is not None:
         screenshots.evaluator_before()
     evaluator_script = (task / 'evaluate.ps1').read_text(encoding='utf-8')
-    evaluation = target.run(encoded_powershell(evaluator_script), timeout=60)
+    evaluation = _execute_control_script(
+        target, evaluator_script, f'wcb-{run_id}-task-evaluate.ps1', timeout=60,
+    )
     eval_stdout = evaluation.stdout.decode('utf-8', 'replace').strip()
     try:
         eval_json = json.loads(eval_stdout.splitlines()[0])
@@ -260,7 +291,7 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     passed = evaluation.returncode == 0 and bool(eval_json.get('passed'))
     evaluator_log.emit('evaluation', exit_code=evaluation.returncode, result=eval_json, stderr=evaluation.stderr.decode('utf-8', 'replace'))
     metadata = {
-        'schema': 'wcb.run-metadata/v1', 'run_id': run_id, 'task': 'ps002-path-quoting',
+        'schema': 'wcb.run-metadata/v1', 'run_id': run_id, 'task': task_id,
         'domain': domain, 'base_sha256': 'e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4',
         'model': model, 'variant': variant, 'agent_exit': agent_exit, 'passed': passed,
         'finished_at': utc_now(),

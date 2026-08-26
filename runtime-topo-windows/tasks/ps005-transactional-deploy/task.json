@@ -1,0 +1,7 @@
+{
+  "schema": "wcb.task/v1",
+  "id": "ps005-transactional-deploy",
+  "difficulty": 5,
+  "shell": "Windows PowerShell 5.1",
+  "workspace": "C:\\WCB\\tasks\\PS005 Transactional Deploy"
+}
