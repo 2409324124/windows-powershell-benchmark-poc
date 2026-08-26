@@ -240,6 +240,8 @@ if ($sessionId -ge 0) {
         arguments: Sequence[str],
         workspace: str,
         expected_session_id: int,
+        environment: dict[str, str] | None = None,
+        prepend_shadow: bool = True,
     ) -> None:
         guest_dir = self.guest_dir(run_id)
         request = {
@@ -249,6 +251,8 @@ if ($sessionId -ge 0) {
             "workspace": workspace,
             "expected_session_id": expected_session_id,
             "expected_username": self.user,
+            "environment": environment or {},
+            "prepend_shadow": prepend_shadow,
         }
         request_bytes = json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         request_b64 = base64.b64encode(request_bytes).decode("ascii")
@@ -267,16 +271,18 @@ New-Item -ItemType Directory -Path $root -Force | Out-Null
                 "interactive Agent staging failed: " + result.stderr.decode("utf-8", "replace").strip()
             )
 
-    def start(self, run_id: str) -> None:
+    def start(self, run_id: str, *, hidden: bool = False) -> None:
         guest_dir = self.guest_dir(run_id)
         task_name = self.task_name(run_id)
         launcher = guest_dir + r"\launch.ps1"
         request = guest_dir + r"\request.json"
-        action_arguments = f'-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{launcher}" -RequestPath "{request}"'
+        window_style = '-WindowStyle Hidden ' if hidden else ''
+        action_arguments = f'-NoLogo -NoProfile {window_style}-ExecutionPolicy Bypass -File "{launcher}" -RequestPath "{request}"'
+        hidden_setting = ' -Hidden' if hidden else ''
         script = f"""
 $action = New-ScheduledTaskAction -Execute 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' -Argument {_ps_literal(action_arguments)}
 $principal = New-ScheduledTaskPrincipal -UserId {_ps_literal(self.user)} -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew{hidden_setting}
 Register-ScheduledTask -TaskName {_ps_literal(task_name)} -Action $action -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName {_ps_literal(task_name)}
 """
@@ -545,13 +551,14 @@ if ($null -ne $p) {{
     def cleanup(
         self, run_id: str, console: ConsoleSession,
         launcher: LauncherIdentity | None, process: InteractiveProcess | None,
-        *, preserve_staging: bool = False,
+        *, preserve_staging: bool = False, hidden: bool = False,
     ) -> dict:
         task_name = self.task_name(run_id)
         guest_dir = self.guest_dir(run_id)
         launcher_path = guest_dir + r"\launch.ps1"
         request_path = guest_dir + r"\request.json"
-        expected_arguments = f'-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{launcher_path}" -RequestPath "{request_path}"'
+        window_style = '-WindowStyle Hidden ' if hidden else ''
+        expected_arguments = f'-NoLogo -NoProfile {window_style}-ExecutionPolicy Bypass -File "{launcher_path}" -RequestPath "{request_path}"'
         expected_wrapper = launcher.wrapper_pid if launcher is not None else 0
         process_pid = process.pid if process is not None else 0
         process_parent = process.parent_pid if process is not None else 0

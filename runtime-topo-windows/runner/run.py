@@ -9,9 +9,10 @@ from pathlib import Path
 import yaml
 
 from runner.opencode import SshTarget, encoded_powershell
+from runner.process_judge import ProcessJudgeError, judge_root
 from runner.real_canary import run as run_real_canary
 from runner.report import JsonlLog, utc_now, write_json_atomic
-from runner.scorer import CodexProcessJudge, score_root
+from runner.scorer import score_root
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,7 +64,10 @@ def transport_canary(config: dict, output: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("transport-canary", "opencode-canary", "score"))
+    parser.add_argument(
+        "command",
+        choices=("transport-canary", "opencode-canary", "process-judge", "score"),
+    )
     parser.add_argument("--config", type=Path, default=ROOT / "benchmark.yaml")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--task", help="override the task id from benchmark.yaml")
@@ -75,15 +79,26 @@ def main() -> int:
     if args.command == "score":
         if args.output is None:
             parser.error("score requires --output ROOT")
-        config = load_config(args.config)
-        judge = CodexProcessJudge.from_config(config.get("judge"))
-        reports = score_root(args.output, ROOT, judge, task_id=args.task)
+        reports = score_root(args.output, ROOT, task_id=args.task)
         for report in reports:
             print(json.dumps(report, ensure_ascii=False, separators=(",", ":")))
         return 2 if any(
             report["status"] == "infrastructure_failure" for report in reports
         ) else 0
     config = load_config(args.config)
+    if args.command == "process-judge":
+        if args.output is None:
+            parser.error("process-judge requires --output ROOT")
+        try:
+            reports = judge_root(config, ROOT, args.output, task_id=args.task)
+        except (ProcessJudgeError, KeyError, OSError, TypeError, ValueError) as error:
+            print(f"Unable to run Windows process Judge: {error}", file=sys.stderr)
+            return 2
+        for report in reports:
+            print(json.dumps(report, ensure_ascii=False, separators=(",", ":")))
+        return 2 if any(
+            report["status"] == "infrastructure_failure" for report in reports
+        ) else 0
     if args.task:
         config["task"] = args.task
     output = args.output or Path(config["storage"]["runs"])

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import sys
@@ -59,6 +60,49 @@ def _run_agent(
         return result.stdout, result.stderr, result.returncode, False
     except subprocess.TimeoutExpired as error:
         return error.stdout, error.stderr, 124, True
+
+
+def _capture_workspace_snapshot(
+    target: SshTarget,
+    workspace: str,
+    run_id: str,
+) -> bytes:
+    archive = rf'C:\WCB\runs\{run_id}\workspace-after-agent.zip'
+    script = rf"""
+$workspace = '{workspace.replace("'", "''")}'
+$archive = '{archive}'
+if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {{
+    throw 'task workspace is missing before snapshot'
+}}
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+try {{
+    [IO.Compression.ZipFile]::CreateFromDirectory(
+        $workspace,
+        $archive,
+        [IO.Compression.CompressionLevel]::Optimal,
+        $false
+    )
+    [Convert]::ToBase64String([IO.File]::ReadAllBytes($archive))
+}} finally {{
+    Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+}}
+"""
+    result = _execute_control_script(
+        target, script, f'wcb-{run_id}-workspace-snapshot.ps1', timeout=90,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode('utf-8', 'replace').strip()
+        raise InteractiveAgentError(
+            f'workspace snapshot failed: {detail or f"exit {result.returncode}"}'
+        )
+    encoded = result.stdout.decode('ascii', 'strict').strip()
+    if not encoded:
+        raise InteractiveAgentError('workspace snapshot returned no archive')
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except ValueError as error:
+        raise InteractiveAgentError('workspace snapshot returned invalid base64') from error
 
 
 def load_task(project_root: Path, task_id: str) -> tuple[Path, dict]:
@@ -328,6 +372,27 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     )
     orchestrator.emit('agent_finished', exit_code=agent_exit, timed_out=timed_out)
 
+    snapshot_complete = False
+    try:
+        snapshot = _capture_workspace_snapshot(target, workspace, run_id)
+        write_bytes_atomic(run_dir / 'workspace-after-agent.zip', snapshot)
+        write_json_atomic(run_dir / 'workspace-snapshot.json', {
+            'schema': 'wcb.workspace-snapshot/v1',
+            'run_id': run_id,
+            'phase': 'after_agent_before_evaluator',
+            'workspace': workspace,
+            'archive': 'workspace-after-agent.zip',
+            'captured_at': utc_now(),
+        })
+        snapshot_complete = True
+        orchestrator.emit(
+            'workspace_snapshot_captured',
+            archive='workspace-after-agent.zip',
+            phase='after_agent_before_evaluator',
+        )
+    except (InteractiveAgentError, OSError, ValueError) as error:
+        orchestrator.emit('workspace_snapshot_failed', reason=str(error))
+
     if screenshots is not None:
         screenshots.evaluator_before()
     evaluator_script = (task / 'evaluate.ps1').read_text(encoding='utf-8')
@@ -342,18 +407,19 @@ def run(config: dict, project_root: Path, output_root: Path, *, visual: bool = F
     evaluator_log.emit('evaluation', exit_code=evaluation.returncode, result=eval_json, stderr=evaluation.stderr.decode('utf-8', 'replace'))
     metadata = {
         'schema': 'wcb.run-metadata/v1', 'run_id': run_id, 'task': task_id,
-        'evidence_schema': 'wcb.run-evidence/v2',
+        'evidence_schema': 'wcb.run-evidence/v3',
         'domain': domain, 'base_sha256': 'e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4',
         'model': model, 'variant': variant, 'agent_exit': agent_exit,
         'workspace': workspace,
+        'workspace_snapshot': 'workspace-after-agent.zip' if snapshot_complete else None,
         'timed_out': timed_out, 'evaluator_exit': evaluation.returncode,
         'finished_at': utc_now(),
     }
     write_json_atomic(run_dir / 'metadata.json', metadata)
     write_json_atomic(run_dir / 'evaluator.json', eval_json)
-    orchestrator.emit('run_finished', evidence_complete=True)
+    orchestrator.emit('run_finished', evidence_complete=snapshot_complete)
     print(json.dumps({
         'run_id': run_id, 'run_dir': str(run_dir),
-        'evidence_complete': True, 'agent_exit': agent_exit,
+        'evidence_complete': snapshot_complete, 'agent_exit': agent_exit,
     }))
-    return 0
+    return 0 if snapshot_complete else 3

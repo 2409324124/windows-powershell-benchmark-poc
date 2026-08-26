@@ -251,6 +251,16 @@ class InteractiveOpenCodeTests(unittest.TestCase):
         self.assertIn(r"-Execute 'C:\Program Files\PowerShell\7\pwsh.exe'", script)
         self.assertIn(r'C:\WCB\runs\run-123\launch.ps1', script)
 
+    def test_hidden_start_keeps_limited_interactive_token(self) -> None:
+        self.target.run.return_value = subprocess.CompletedProcess([], 0, b'', b'')
+        self.launcher.start('judge-run-123', hidden=True)
+        script = decode_encoded_powershell(self.target.run.call_args.args[0])
+        self.assertIn('-LogonType Interactive', script)
+        self.assertIn('-RunLevel Limited', script)
+        self.assertIn('-WindowStyle Hidden', script)
+        self.assertIn('New-ScheduledTaskSettingsSet', script)
+        self.assertIn('-Hidden', script)
+
     def test_large_stage_script_uses_short_command_and_complete_upload(self) -> None:
         target = Mock()
         target.upload_bytes.return_value = subprocess.CompletedProcess([], 0, b'', b'')
@@ -273,6 +283,22 @@ class InteractiveOpenCodeTests(unittest.TestCase):
         self.assertIn("Join-Path $root 'launch.ps1'", script)
         self.assertNotIn(launcher_source, command)
         self.assertNotIn('stdin', call.kwargs)
+
+    def test_stage_can_disable_shadow_path_for_judge(self) -> None:
+        self.target.run.return_value = subprocess.CompletedProcess([], 0, b'', b'')
+        self.launcher.stage(
+            'judge-run', executable=r'C:\OpenCode\opencode.exe',
+            arguments=('--model', 'opencode-go/gpt-5.6-luna'),
+            workspace=r'C:\WCB\judge-runs\judge-run\workspace',
+            expected_session_id=1,
+            environment={'OPENCODE_CONFIG_CONTENT': '{}'},
+            prepend_shadow=False,
+        )
+        script = decode_uploaded_control(self.target)
+        encoded_request = script.split("FromBase64String('", 1)[1].split("')", 1)[0]
+        request = json.loads(base64.b64decode(encoded_request))
+        self.assertFalse(request['prepend_shadow'])
+        self.assertEqual(request['environment'], {'OPENCODE_CONFIG_CONTENT': '{}'})
 
     def test_inspect_process_captures_exact_child_identity(self) -> None:
         payload = {
@@ -479,6 +505,7 @@ class InteractiveLauncherScriptTests(unittest.TestCase):
         self.assertIn("Write-State -Phase 'agent_starting'", script)
         self.assertIn('opencode.auth.stdout.log', script)
         self.assertIn('opencode.auth.stderr.log', script)
+        self.assertIn('if ([bool]$Request.prepend_shadow)', script)
 
 
 class FakeInteractiveOpenCode:
@@ -607,7 +634,10 @@ class FakeScreenshots:
 def fake_ssh_target(*results):
     target = Mock()
     target.upload_bytes.return_value = subprocess.CompletedProcess([], 0, b'', b'')
-    target.run.side_effect = list(results)
+    ordered = list(results)
+    if len(ordered) == 2:
+        ordered.insert(1, subprocess.CompletedProcess([], 0, b'emlw\n', b''))
+    target.run.side_effect = ordered
     return target
 
 
@@ -732,8 +762,10 @@ class CanaryOutputTests(unittest.TestCase):
             self.assertEqual((run_dir / 'opencode.stdout.jsonl').read_bytes(), b'{"type":"done"}\n')
             self.assertFalse((run_dir / 'score.json').exists())
             metadata = json.loads((run_dir / 'metadata.json').read_text())
-            self.assertEqual(metadata['evidence_schema'], 'wcb.run-evidence/v2')
+            self.assertEqual(metadata['evidence_schema'], 'wcb.run-evidence/v3')
             self.assertEqual(metadata['workspace'], r'C:\WCB\tasks\PS002 Project (quoted)')
+            self.assertEqual(metadata['workspace_snapshot'], 'workspace-after-agent.zip')
+            self.assertEqual((run_dir / 'workspace-after-agent.zip').read_bytes(), b'zip')
             self.assertNotIn('passed', metadata)
             self.assertFalse(interactive.terminated)
             self.assertTrue(interactive.cleaned)
@@ -822,7 +854,7 @@ class CanaryOutputTests(unittest.TestCase):
             with patch('runner.real_canary.SshTarget', return_value=target), \
                     patch('runner.real_canary.InteractiveOpenCode', return_value=interactive):
                 self.assertEqual(run(self.config(300), ROOT, Path(temporary)), 0)
-        self.assertEqual(target.run.call_count, 2)
+        self.assertEqual(target.run.call_count, 3)
         for call in target.run.call_args_list:
             self.assertNotIn('opencode.exe', call.args[0].casefold())
             self.assertNotIn(' auth list', call.args[0].casefold())

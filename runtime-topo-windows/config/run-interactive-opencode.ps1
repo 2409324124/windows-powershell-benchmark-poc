@@ -80,6 +80,13 @@ $env:HTTP_PROXY = 'http://192.168.122.1:17890'
 $env:HTTPS_PROXY = 'http://192.168.122.1:17890'
 $env:ALL_PROXY = 'http://192.168.122.1:17890'
 $env:NO_PROXY = 'localhost,127.0.0.1,::1,192.168.122.0/24'
+foreach ($Property in @($Request.environment.PSObject.Properties)) {
+    [Environment]::SetEnvironmentVariable(
+        [string]$Property.Name,
+        [string]$Property.Value,
+        [EnvironmentVariableTarget]::Process
+    )
+}
 & $Request.executable auth list 1> $AuthStdoutPath 2> $AuthStderrPath
 $AuthExitCode = $LASTEXITCODE
 $AuthText = if (Test-Path -LiteralPath $AuthStdoutPath) {
@@ -106,7 +113,9 @@ $ExitCode = 1
 $Failure = $null
 try {
     Set-Location -LiteralPath $Request.workspace
-    $env:Path = (Join-Path $Request.workspace 'Shadow') + ';' + $env:Path
+    if ([bool]$Request.prepend_shadow) {
+        $env:Path = (Join-Path $Request.workspace 'Shadow') + ';' + $env:Path
+    }
     & $Request.executable @($Request.arguments) 2> $StderrPath | Tee-Object -FilePath $StdoutPath
     $ExitCode = $LASTEXITCODE
 } catch {

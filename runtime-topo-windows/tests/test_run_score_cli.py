@@ -17,14 +17,6 @@ class ScoreCliTests(unittest.TestCase):
                     'runner.run', 'score', '--output', str(output),
                     '--task', 'ps001-utf8-output',
                 ]),
-                mock.patch(
-                    'runner.run.load_config',
-                    return_value={'judge': {'model': 'gpt-5.6-luna'}},
-                ) as load_config,
-                mock.patch(
-                    'runner.run.CodexProcessJudge.from_config',
-                    return_value=mock.sentinel.judge,
-                ) as from_config,
                 mock.patch('runner.run.score_root', return_value=[{
                     'run_id': 'opencode-ps001-example',
                     'status': 'passed',
@@ -34,11 +26,8 @@ class ScoreCliTests(unittest.TestCase):
                 exit_code = run.main()
 
             self.assertEqual(exit_code, 0)
-            load_config.assert_called_once_with(run.ROOT / 'benchmark.yaml')
-            from_config.assert_called_once_with({'model': 'gpt-5.6-luna'})
             score_root.assert_called_once_with(
-                output, run.ROOT, mock.sentinel.judge,
-                task_id='ps001-utf8-output',
+                output, run.ROOT, task_id='ps001-utf8-output',
             )
             output_print.assert_called_once()
 
@@ -54,13 +43,6 @@ class ScoreCliTests(unittest.TestCase):
                 mock.patch('sys.argv', [
                     'runner.run', 'score', '--output', temporary,
                 ]),
-                mock.patch(
-                    'runner.run.load_config', return_value={'judge': {}},
-                ),
-                mock.patch(
-                    'runner.run.CodexProcessJudge.from_config',
-                    return_value=mock.sentinel.judge,
-                ),
                 mock.patch('runner.run.score_root', return_value=[{
                     'run_id': 'opencode-ps001-bad',
                     'status': 'infrastructure_failure',
@@ -68,6 +50,27 @@ class ScoreCliTests(unittest.TestCase):
                 mock.patch('builtins.print'),
             ):
                 self.assertEqual(run.main(), 2)
+
+    def test_process_judge_dispatches_to_windows_opencode(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            config = {'judge': {'model': 'opencode-go/gpt-5.6-luna'}}
+            with (
+                mock.patch('sys.argv', [
+                    'runner.run', 'process-judge', '--output', str(output),
+                    '--task', 'ps005-transactional-deploy',
+                ]),
+                mock.patch('runner.run.load_config', return_value=config),
+                mock.patch('runner.run.judge_root', return_value=[{
+                    'run_id': 'opencode-ps005-example',
+                    'status': 'completed',
+                }]) as judge_root,
+                mock.patch('builtins.print'),
+            ):
+                self.assertEqual(run.main(), 0)
+            judge_root.assert_called_once_with(
+                config, run.ROOT, output, task_id='ps005-transactional-deploy',
+            )
 
 
 if __name__ == '__main__':

@@ -186,6 +186,54 @@ class CodexProcessJudgeTests(unittest.TestCase):
 
 
 class ScoreRunTests(unittest.TestCase):
+    def test_composes_precomputed_windows_opencode_judge_with_machine_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = make_complete_run(Path(temporary))
+            criteria = [
+                {
+                    'id': criterion_id,
+                    'score': 10,
+                    'reason': 'Supported by the recorded run.',
+                    'evidence': ['agent.jsonl:event=opencode_event'],
+                }
+                for criterion_id in (
+                    'completion_and_target',
+                    'scope_and_correctness',
+                    'verification_quality',
+                    'failure_recovery',
+                    'claim_accuracy',
+                )
+            ]
+            write_json(run_dir / 'process-judge.json', {
+                'schema': 'wcb.process-judge-cache/v2',
+                'run_id': run_dir.name,
+                'judge': {
+                    'runtime': 'windows-opencode',
+                    'model': 'opencode-go/gpt-5.6-luna',
+                    'variant': 'low',
+                },
+                'result': {
+                    'process_score': 50,
+                    'reason': 'Windows replay confirmed the recorded process.',
+                    'criteria': criteria,
+                    'windows_replay': [{
+                        'command': 'powershell.exe -File .\\build.ps1',
+                        'exit_code': 0,
+                    }],
+                },
+            })
+
+            result = score_run(
+                run_dir, manifest('first', 'second'), TASK_PROMPT,
+            )
+
+            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['score'], 100)
+            self.assertEqual(result['process']['process_score'], 50)
+            self.assertEqual(
+                result['process']['windows_replay'][0]['exit_code'], 0,
+            )
+
     def test_combines_judge_process_score_and_equal_result_checks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = make_complete_run(Path(temporary))

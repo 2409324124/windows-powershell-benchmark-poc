@@ -22,6 +22,14 @@ PROCESS_JUDGE_SCHEMA = {
     },
 }
 
+WINDOWS_PROCESS_CRITERIA = (
+    'completion_and_target',
+    'scope_and_correctness',
+    'verification_quality',
+    'failure_recovery',
+    'claim_accuracy',
+)
+
 
 class EvidenceError(ValueError):
     pass
@@ -229,25 +237,97 @@ def _validate_process_judge_cache(
     envelope: dict,
     *,
     run_id: str,
-    judge_identity: dict,
+    judge_identity: dict | None,
 ) -> dict:
     if set(envelope) != {'schema', 'run_id', 'judge', 'result'}:
         raise EvidenceError('process judge cache envelope has invalid fields')
-    if envelope.get('schema') != 'wcb.process-judge-cache/v1':
-        raise EvidenceError('process judge cache envelope has invalid schema')
     if envelope.get('run_id') != run_id:
         raise EvidenceError('process judge cache run_id contradicts this run')
-    if envelope.get('judge') != judge_identity:
-        raise EvidenceError('process judge cache judge identity does not match configuration')
     result = envelope.get('result')
     if not isinstance(result, dict):
         raise EvidenceError('process judge cache result must be an object')
-    return _validate_process_judge(result)
+    schema = envelope.get('schema')
+    if schema == 'wcb.process-judge-cache/v1':
+        if judge_identity is not None and envelope.get('judge') != judge_identity:
+            raise EvidenceError(
+                'process judge cache judge identity does not match configuration'
+            )
+        return _validate_process_judge(result)
+    if schema != 'wcb.process-judge-cache/v2':
+        raise EvidenceError('process judge cache envelope has invalid schema')
+    judge = envelope.get('judge')
+    if (
+        not isinstance(judge, dict)
+        or set(judge) != {'runtime', 'model', 'variant'}
+        or judge.get('runtime') != 'windows-opencode'
+        or not all(isinstance(judge.get(field), str) and judge[field] for field in (
+            'model', 'variant',
+        ))
+    ):
+        raise EvidenceError('Windows process judge identity is invalid')
+    if set(result) != {
+        'process_score', 'reason', 'criteria', 'windows_replay',
+    }:
+        raise EvidenceError('Windows process judge result has invalid fields')
+    reason = result.get('reason')
+    criteria = result.get('criteria')
+    replay = result.get('windows_replay')
+    if not isinstance(reason, str) or not reason.strip():
+        raise EvidenceError('Windows process judge reason is invalid')
+    if not isinstance(criteria, list) or len(criteria) != 5:
+        raise EvidenceError('Windows process judge must contain five criteria')
+    total = 0
+    for expected_id, item in zip(WINDOWS_PROCESS_CRITERIA, criteria):
+        if (
+            not isinstance(item, dict)
+            or set(item) != {'id', 'score', 'reason', 'evidence'}
+            or item.get('id') != expected_id
+        ):
+            raise EvidenceError(
+                f'Windows process judge criterion {expected_id!r} is invalid'
+            )
+        score = item.get('score')
+        if type(score) is not int or not 0 <= score <= 10:
+            raise EvidenceError(
+                f'Windows process judge criterion {expected_id!r} score is invalid'
+            )
+        if not isinstance(item.get('reason'), str) or not item['reason'].strip():
+            raise EvidenceError(
+                f'Windows process judge criterion {expected_id!r} reason is invalid'
+            )
+        evidence = item.get('evidence')
+        if (
+            not isinstance(evidence, list)
+            or not evidence
+            or not all(isinstance(entry, str) and entry.strip() for entry in evidence)
+        ):
+            raise EvidenceError(
+                f'Windows process judge criterion {expected_id!r} evidence is invalid'
+            )
+        total += score
+    if type(result.get('process_score')) is not int or result['process_score'] != total:
+        raise EvidenceError('Windows process judge process_score contradicts criteria')
+    if (
+        not isinstance(replay, list)
+        or not replay
+        or not all(
+            isinstance(item, dict)
+            and set(item) == {'command', 'exit_code'}
+            and isinstance(item.get('command'), str)
+            and item['command'].strip()
+            and type(item.get('exit_code')) is int
+            for item in replay
+        )
+    ):
+        raise EvidenceError('Windows process judge has no valid PowerShell replay')
+    if not any(item['exit_code'] == 0 for item in replay):
+        raise EvidenceError('Windows process judge has no successful PowerShell replay')
+    return result
 
 
 def _process_judge_result(
     run_dir: Path,
-    judge: ProcessJudge,
+    judge: ProcessJudge | None,
     *,
     task_prompt: str,
     manifest: dict,
@@ -258,13 +338,15 @@ def _process_judge_result(
     result_breakdown: dict,
 ) -> dict:
     cache_path = run_dir / 'process-judge.json'
-    judge_identity = _judge_identity(judge)
+    judge_identity = _judge_identity(judge) if judge is not None else None
     if cache_path.exists():
         return _validate_process_judge_cache(
             _read_json(cache_path),
             run_id=run_dir.name,
             judge_identity=judge_identity,
         )
+    if judge is None:
+        raise EvidenceError('missing evidence file: process-judge.json')
     result = _validate_process_judge(judge.judge(
         task_prompt=task_prompt,
         manifest=manifest,
@@ -513,7 +595,7 @@ def score_run(
     run_dir: Path,
     task_manifest: dict,
     task_prompt: str,
-    judge: ProcessJudge,
+    judge: ProcessJudge | None = None,
 ) -> dict:
     errors: list[str] = []
     task_id = task_manifest.get('id') if isinstance(task_manifest, dict) else None
@@ -578,14 +660,45 @@ def score_run(
             run_started, agent_started, agent_records,
         )
 
-        evidence_v2 = metadata.get('evidence_schema') == 'wcb.run-evidence/v2'
-        if evidence_v2 and run_finished.get('evidence_complete') is not True:
-            raise EvidenceError('v2 run_finished lacks evidence_complete=true')
-        if evidence_v2 and (
+        evidence_schema = metadata.get('evidence_schema')
+        evidence_current = evidence_schema in {
+            'wcb.run-evidence/v2', 'wcb.run-evidence/v3',
+        }
+        if evidence_current and run_finished.get('evidence_complete') is not True:
+            raise EvidenceError('run_finished lacks evidence_complete=true')
+        if evidence_current and (
             agent_started.get('automatic') is not True
             or agent_started.get('input_channel') != 'none'
         ):
-            raise EvidenceError('v2 agent_started lacks automatic no-input evidence')
+            raise EvidenceError('agent_started lacks automatic no-input evidence')
+        if evidence_schema == 'wcb.run-evidence/v3':
+            snapshot = _read_json(run_dir / 'workspace-snapshot.json')
+            expected_snapshot = {
+                'schema': 'wcb.workspace-snapshot/v1',
+                'run_id': run_dir.name,
+                'phase': 'after_agent_before_evaluator',
+                'workspace': task_manifest['workspace'],
+                'archive': 'workspace-after-agent.zip',
+            }
+            for field, expected in expected_snapshot.items():
+                if snapshot.get(field) != expected:
+                    raise EvidenceError(f'workspace snapshot {field} is invalid')
+            if metadata.get('workspace_snapshot') != 'workspace-after-agent.zip':
+                raise EvidenceError('metadata workspace snapshot is invalid')
+            archive = run_dir / 'workspace-after-agent.zip'
+            if not archive.is_file() or archive.stat().st_size == 0:
+                raise EvidenceError('workspace snapshot archive is missing or empty')
+            snapshot_event = _single_event(
+                orchestrator, 'workspace_snapshot_captured', 'orchestrator.jsonl',
+            )
+            if not (
+                _event_time(agent_finished, 'agent_finished')
+                <= _event_time(snapshot_event, 'workspace_snapshot_captured')
+                <= _event_time(evaluation_event, 'evaluation')
+            ):
+                raise EvidenceError(
+                    'workspace snapshot was not captured after Agent and before evaluator'
+                )
         result = _result_score(task_manifest, evaluation)
         process = _process_judge_result(
             run_dir, judge,
@@ -648,7 +761,7 @@ def _load_task_prompt(project_root: Path, task_id: str) -> str:
 def score_root(
     output_root: Path,
     project_root: Path,
-    judge: ProcessJudge,
+    judge: ProcessJudge | None = None,
     *,
     task_id: str | None = None,
 ) -> list[dict]:

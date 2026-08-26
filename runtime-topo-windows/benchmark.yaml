@@ -22,8 +22,9 @@ opencode:
   agent: bench
   version: 1.18.21
 judge:
-  executable: /home/miku/.local/bin/codex
-  model: gpt-5.6-luna
-  reasoning: low
-  timeout_seconds: 120
+  executable: 'C:\Program Files\OpenCode\1.18.21\opencode.exe'
+  model: opencode-go/gpt-5.6-luna
+  variant: low
+  agent: judge
+  timeout_seconds: 180
 task: ps002-path-quoting
