@@ -105,6 +105,18 @@ def recover_run(
         for record in orchestrator
     ):
         raise OutputRecoveryError('run has no verified preserved-output condition')
+    identity = _read_json(run_dir / 'interactive-process.json')
+    if identity.get('run_id') != run_id:
+        raise OutputRecoveryError('interactive process identity has wrong run id')
+    try:
+        wrapper_pid = int(identity['wrapper_pid'])
+        agent_pid = int(identity['pid'])
+    except (KeyError, TypeError, ValueError) as error:
+        raise OutputRecoveryError(
+            'interactive process identity has invalid pids'
+        ) from error
+    if wrapper_pid <= 0 or agent_pid <= 0:
+        raise OutputRecoveryError('interactive process identity has invalid pids')
 
     guest = config['guest']
     target = SshTarget(
@@ -173,8 +185,10 @@ if ($null -ne $task) {{ throw 'refusing recovery cleanup while scheduled task ex
 $statePath = Join-Path $root 'state.json'
 if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {{ throw 'recovery staging state is missing' }}
 $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-if ($state.run_id -ne '{run_id}') {{ throw 'recovery staging run id is wrong' }}
-foreach ($candidate in @([int]$state.wrapper_pid,[int]$state.agent_pid)) {{
+if ($state.run_id -ne '{run_id}' -or [int]$state.wrapper_pid -ne {wrapper_pid}) {{
+    throw 'recovery staging identity is wrong'
+}}
+foreach ($candidate in @({wrapper_pid},{agent_pid})) {{
     if ($candidate -gt 0 -and $null -ne (Get-CimInstance Win32_Process -Filter "ProcessId = $candidate" -ErrorAction SilentlyContinue)) {{
         throw "refusing recovery cleanup while process $candidate exists"
     }}
