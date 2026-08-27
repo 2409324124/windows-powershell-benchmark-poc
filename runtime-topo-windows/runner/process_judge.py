@@ -237,6 +237,9 @@ def _prompt(target_file: str, engine: str) -> str:
     return (
         'Read .wcb-judge\\evidence.json and inspect this frozen after-Agent workspace. '
         'You are scoring the Agent process, not replacing the machine evaluator. '
+        'If evaluator-replay.json is present, treat its result as the authoritative '
+        'machine context; evaluator-original.json is retained only to document the '
+        'superseded evaluator infrastructure failure and must not be blamed on the Agent. '
         'The evaluator result is context for checking whether Agent claims were honest; '
         'do not award or alter machine-result points. First execute this exact '
         f'quote-safe {engine} syntax replay and require exit 0: {safe_replay}. '
@@ -381,6 +384,7 @@ def judge_run(
     ):
         raise ProcessJudgeError('task manifest has no target file for Judge replay')
     prompt = (task_root / 'prompt.md').read_text(encoding='utf-8-sig')
+    evaluation = _read_json(run_dir / 'evaluator.json')
     evidence = {
         'schema': 'wcb.process-judge-input/v1',
         'run_id': run_id,
@@ -388,9 +392,24 @@ def judge_run(
         'manifest': manifest,
         'orchestrator.jsonl': _read_jsonl(run_dir / 'orchestrator.jsonl'),
         'agent.jsonl': _read_jsonl(run_dir / 'agent.jsonl'),
-        'evaluator.json': _read_json(run_dir / 'evaluator.json'),
+        'evaluator.json': evaluation,
         'evaluator.jsonl': _read_jsonl(run_dir / 'evaluator.jsonl'),
     }
+    evaluator_replay = run_dir / 'evaluator-replay.json'
+    if evaluator_replay.is_file():
+        replay = _read_json(evaluator_replay)
+        replay_result = replay.get('result')
+        if (
+            replay.get('schema') != 'wcb.evaluator-replay/v1'
+            or replay.get('run_id') != run_id
+            or replay.get('task') != task_id
+            or not isinstance(replay_result, dict)
+            or type(replay_result.get('passed')) is not bool
+        ):
+            raise ProcessJudgeError('evaluator replay identity is invalid')
+        evidence['evaluator-original.json'] = evaluation
+        evidence['evaluator-replay.json'] = replay
+        evidence['evaluator.json'] = replay_result
     evaluator_input = run_dir / 'evaluator-input.json'
     if evaluator_input.is_file():
         evidence['evaluator-input.json'] = _read_json(evaluator_input)
