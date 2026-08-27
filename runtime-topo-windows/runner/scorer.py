@@ -806,7 +806,10 @@ def _load_manifest(project_root: Path, task_id: str) -> dict:
     if not task_id or Path(task_id).name != task_id:
         raise EvidenceError(f'invalid task id: {task_id!r}')
     manifest = _read_json(project_root / 'tasks' / task_id / 'task.json')
-    if manifest.get('schema') != 'wcb.task/v1' or manifest.get('id') != task_id:
+    if (
+        manifest.get('schema') not in {'wcb.task/v1', 'wcb.task/v2'}
+        or manifest.get('id') != task_id
+    ):
         raise EvidenceError(f'invalid task manifest for {task_id}')
     return manifest
 
