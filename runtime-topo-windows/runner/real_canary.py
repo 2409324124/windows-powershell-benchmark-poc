@@ -16,6 +16,23 @@ from runner.report import JsonlLog, utc_now, write_bytes_atomic, write_json_atom
 from runner.vm import ScreenshotMonitor, VisualModeError, require_visual_domain
 
 
+def _bench_config_content() -> str:
+    return json.dumps({
+        '$schema': 'https://opencode.ai/config.json',
+        'share': 'disabled',
+        'agent': {
+            'bench': {
+                'mode': 'primary',
+                'description': 'Interactive Windows benchmark coding agent.',
+                'prompt': (
+                    'Work only on the supplied benchmark task and workspace. '
+                    'Use the available Windows tools to implement and verify the fix.'
+                ),
+            },
+        },
+    }, ensure_ascii=False, separators=(',', ':'))
+
+
 def _as_bytes(value: bytes | str | None) -> bytes:
     if value is None:
         return b''
@@ -270,6 +287,7 @@ def run(
         interactive.stage(
             run_id, executable=executable, arguments=tuple(arguments),
             workspace=workspace, expected_session_id=console.session_id,
+            environment={'OPENCODE_CONFIG_CONTENT': _bench_config_content()},
         )
         staged = True
         interactive.start(run_id)
@@ -373,7 +391,6 @@ def run(
             if screenshots is not None:
                 screenshots.finish_agent(timed_out=True)
                 screenshot_finished = True
-            collect_agent_best_effort()
             orchestrator.emit(
                 'agent_timeout', timeout_seconds=config['runtime']['agent_timeout_seconds'],
                 pid=process.pid, session_id=process.session_id,

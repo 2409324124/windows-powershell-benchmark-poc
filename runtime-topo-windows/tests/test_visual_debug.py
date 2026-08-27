@@ -23,7 +23,7 @@ from runner.opencode import (
     _control_powershell,
     encoded_powershell,
 )
-from runner.real_canary import _capture_workspace_snapshot, run
+from runner.real_canary import _bench_config_content, _capture_workspace_snapshot, run
 from runner.report import JsonlLog, write_bytes_atomic
 from runner.vm import ScreenshotMonitor, VisualModeError, require_visual_domain
 
@@ -690,6 +690,14 @@ class CanaryOutputTests(unittest.TestCase):
         self.assertEqual(ssh_type.call_args.kwargs['user'], 'Administrator')
         self.assertIs(interactive_type.call_args.args[0], target)
         self.assertEqual(interactive_type.call_args.args[1], 'benchmark')
+        environment = interactive.stage_args[1]['environment']
+        inline_config = json.loads(environment['OPENCODE_CONFIG_CONTENT'])
+        self.assertEqual(inline_config['share'], 'disabled')
+        self.assertEqual(inline_config['agent']['bench']['mode'], 'primary')
+        self.assertEqual(
+            inline_config['agent']['bench'],
+            json.loads(_bench_config_content())['agent']['bench'],
+        )
 
     def test_timeout_saves_partial_output_and_all_artifact_streams(self) -> None:
         setup = subprocess.CompletedProcess([], 0, b'', b'')
@@ -723,7 +731,7 @@ class CanaryOutputTests(unittest.TestCase):
             self.assertTrue(interactive.terminated)
             self.assertTrue(interactive.cleaned)
 
-    def test_timeout_captures_before_output_event_and_termination(self) -> None:
+    def test_timeout_terminates_before_collecting_locked_output(self) -> None:
         trace = []
         target = fake_ssh_target(
             subprocess.CompletedProcess([], 0, b'', b''),
@@ -754,7 +762,7 @@ class CanaryOutputTests(unittest.TestCase):
                 self.assertEqual(run(self.config(0), ROOT, Path(temporary), visual=True), 0)
         self.assertEqual(
             trace,
-            ['timeout_screenshot', 'collect_output', 'timeout_event', 'terminate'],
+            ['timeout_screenshot', 'timeout_event', 'terminate', 'collect_output'],
         )
 
     def test_normal_exit_collects_output_without_termination(self) -> None:
@@ -855,8 +863,8 @@ class CanaryOutputTests(unittest.TestCase):
         self.assertEqual(
             trace,
             [
-                'timeout_screenshot', 'collect_output', 'timeout_event',
-                'terminate', 'collect_output',
+                'timeout_screenshot', 'timeout_event', 'terminate',
+                'collect_output',
             ],
         )
 

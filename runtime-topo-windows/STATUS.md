@@ -10,7 +10,7 @@
 - SSH control uses built-in `Administrator`; visible Agent execution uses `wcb-agent-admin` in the active console with a Medium token.
 - SSH is key-only and guest firewall restricts port 22 to the libvirt gateway `192.168.122.1`.
 - Windows locale/timezone fixed to en-US/UTC and automatic Windows Update disabled by policy.
-- OpenCode base configuration disables auto-update and sharing and defines the `bench` agent.
+- Every Agent launch injects a non-sharing inline OpenCode configuration that defines the `bench` agent; the run does not depend on a mutable per-user agent alias.
 - Credential-free base frozen and protected:
   - `ws2025-opencode-1.18.21-v001.qcow2`
   - SHA-256 `e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4`
@@ -28,6 +28,10 @@
 
 ## Test status
 
+- v0.1.0 runtime regression `opencode-ps005-longcat20-v010` with `opencode-go/longcat-2.0`, variant `low`: **VALID RUN / 95 OF 100**.
+  - The Agent reached the 300-second supervisor timeout, but its 26 KiB structured output was recovered, the after-Agent workspace was frozen, and all eight PS005 machine checks passed for 50/50.
+  - The Windows Luna Judge completed with 45/50 process points; scorer v3 recorded `status: valid` and no global pass/fail label.
+  - The run exposed two runtime defects: the missing inline `bench` definition caused OpenCode to fall back to its default agent, and the timeout path attempted to read Tee output before terminating the writer. The runner now injects the agent definition and collects timeout output after PID-verified termination. No second canary was consumed to conceal the original observation.
 - Visual PS005 run `opencode-ps005-dd2a25f6` with `opencode-go/deepseek-v4-flash`, variant `low`: **VALID RUN / 97 OF 100**.
   - The Viewer was mapped, focused, and confirmed visible by the user before launch.
   - Agent exited `0`, did not time out, and produced complete v3 run evidence, including the after-Agent/before-evaluator workspace snapshot.

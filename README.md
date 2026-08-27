@@ -32,6 +32,8 @@
 - 证据完整且评分链路一致时状态为 `valid`；只有环境、证据或评测链路损坏才是 `infrastructure_failure`，此时分数为 `null`。
 - 过程 Judge 固定为 `opencode-go/gpt-5.6-luna / low`。
 
+发布前另有一次独立的 LongCat 2.0 / PS005 runtime 回归得到 95 分；它不属于上述 5×5 矩阵，也不会覆盖或替换矩阵中的 40 分。重复尝试始终作为不同运行保留。
+
 ### 被测模型
 
 | 显示名 | OpenCode model | 推理档位 |
