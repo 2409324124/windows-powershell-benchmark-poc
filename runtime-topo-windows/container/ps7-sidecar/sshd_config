@@ -6,7 +6,7 @@ KbdInteractiveAuthentication no
 PermitRootLogin no
 PubkeyAuthentication yes
 AuthorizedKeysFile .ssh/authorized_keys
-AllowUsers wcb-task@192.168.122.245
+AllowUsers wcb-task@172.21.0.1
 PermitUserEnvironment no
 AllowAgentForwarding no
 AllowTcpForwarding no
