@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shlex
 import subprocess
 from pathlib import Path
 
@@ -12,9 +11,8 @@ class SidecarError(RuntimeError):
 
 
 def _docker(arguments: list[str], *, timeout: int = 1200) -> subprocess.CompletedProcess[str]:
-    command = shlex.join(['docker', *arguments])
     return subprocess.run(
-        ['sg', 'docker', '-c', command], text=True, capture_output=True,
+        ['docker', *arguments], text=True, capture_output=True,
         timeout=timeout, check=False,
     )
 
