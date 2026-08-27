@@ -12,7 +12,13 @@ New-Item -ItemType Directory -Path $work -Force | Out-Null
 function Invoke-Scenario([string]$Name,[string]$FailName) {
     $state = Join-Path $work ($Name + '-state')
     $output = Join-Path $work ($Name + '-manifest.json')
-    & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -InputDirectory $inputs -OutputPath $output -WorkerPath $worker -StateDirectory $state -FailName $FailName 1>$null 2>$null
+    $arguments = @(
+        '-NoLogo', '-NoProfile', '-NonInteractive', '-File', $script,
+        '-InputDirectory', $inputs, '-OutputPath', $output,
+        '-WorkerPath', $worker, '-StateDirectory', $state
+    )
+    if ($FailName) { $arguments += @('-FailName', $FailName) }
+    & $pwsh @arguments 1>$null 2>$null
     $exit = $LASTEXITCODE
     Start-Sleep -Milliseconds 200
     [ordered]@{ exit=$exit; output=$output; state=$state }
