@@ -1,0 +1,18 @@
+{
+  "schema": "wcb.task/v2",
+  "id": "ps009-native-byte-pipeline",
+  "difficulty": 9,
+  "shell": "PowerShell 7.6.4",
+  "workspace": "C:\\WCB\\tasks\\PS009 Native Byte Pipeline",
+  "target_files": ["byte-pipeline.ps1"],
+  "runtime_matrix": ["win-pwsh76"],
+  "evaluator_scenarios": ["complete-stream", "truncated-stream"],
+  "result_checks": [
+    {"id": "success-exit", "field": "success_exit_zero", "expected": true},
+    {"id": "bytes-exact", "field": "binary_bytes_exact", "expected": true},
+    {"id": "native-pipeline", "field": "direct_native_pipeline", "expected": true},
+    {"id": "stderr-separated", "field": "stderr_separated", "expected": true},
+    {"id": "failure-atomic", "field": "failure_exit_29_no_publish", "expected": true},
+    {"id": "idempotent", "field": "idempotent", "expected": true}
+  ]
+}

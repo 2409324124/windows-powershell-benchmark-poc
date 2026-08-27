@@ -1,0 +1,18 @@
+Port 22
+ListenAddress 0.0.0.0
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+AllowUsers wcb-task@192.168.122.245
+PermitUserEnvironment no
+AllowAgentForwarding no
+AllowTcpForwarding no
+X11Forwarding no
+PermitTunnel no
+GatewayPorts no
+Subsystem powershell /opt/microsoft/powershell/7/pwsh -sshs -NoLogo -NoProfile
+PidFile /run/sshd.pid
+LogLevel VERBOSE

@@ -356,6 +356,8 @@ def _validate_agent(
             )
     if not (run_dir / 'workspace-after-agent.zip').is_file():
         raise MatrixError(f'{cell["run_id"]} workspace snapshot is missing')
+    if metadata.get('runtime_matrix') and not (run_dir / 'evaluator-input.json').is_file():
+        raise MatrixError(f'{cell["run_id"]} evaluator input is missing')
     records = [
         json.loads(line)
         for line in (run_dir / 'orchestrator.jsonl').read_text(

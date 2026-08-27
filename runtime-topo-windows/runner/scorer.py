@@ -410,6 +410,8 @@ def _result_score(manifest: dict, evaluation: dict) -> dict:
 
 
 def _validate_task_contract(manifest: dict) -> None:
+    if manifest.get('schema') not in {'wcb.task/v1', 'wcb.task/v2'}:
+        raise EvidenceError('task.json has an unsupported schema')
     workspace = manifest.get('workspace')
     targets = manifest.get('target_files')
     if not isinstance(workspace, str) or not ntpath.isabs(workspace):
@@ -743,6 +745,28 @@ def score_run(
                 raise EvidenceError(
                     'workspace snapshot was not captured after Agent and before evaluator'
                 )
+            if task_manifest.get('schema') == 'wcb.task/v2':
+                evaluator_input = _read_json(run_dir / 'evaluator-input.json')
+                if (
+                    evaluator_input.get('schema') != 'wcb.evaluator-input/v1'
+                    or evaluator_input.get('run_id') != run_dir.name
+                    or evaluator_input.get('task') != task_id
+                    or evaluator_input.get('scenarios')
+                    != task_manifest.get('evaluator_scenarios')
+                    or metadata.get('evaluator_input') != 'evaluator-input.json'
+                ):
+                    raise EvidenceError('evaluator input identity is invalid')
+                input_event = _single_event(
+                    orchestrator, 'evaluator_input_created', 'orchestrator.jsonl',
+                )
+                if not (
+                    _event_time(agent_finished, 'agent_finished')
+                    <= _event_time(input_event, 'evaluator_input_created')
+                    <= _event_time(snapshot_event, 'workspace_snapshot_captured')
+                ):
+                    raise EvidenceError(
+                        'evaluator input was not created after Agent and before snapshot'
+                    )
         result = _result_score(task_manifest, machine_evaluation)
         result['evidence_source'] = result_source
         process = _process_judge_result(

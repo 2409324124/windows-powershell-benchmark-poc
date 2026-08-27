@@ -1,0 +1,18 @@
+{
+  "schema": "wcb.task/v2",
+  "id": "ps006-dual-engine-pipeline",
+  "difficulty": 6,
+  "shell": "Windows PowerShell 5.1 and PowerShell 7.6.4",
+  "workspace": "C:\\WCB\\tasks\\PS006 Dual Engine Pipeline",
+  "target_files": ["summarize.ps1"],
+  "runtime_matrix": ["win-ps51", "win-pwsh76"],
+  "evaluator_scenarios": ["mixed-records", "single-service"],
+  "result_checks": [
+    {"id": "both-engines-exit", "field": "both_engines_exit_zero", "expected": true},
+    {"id": "mixed-result", "field": "mixed_result_exact", "expected": true},
+    {"id": "single-array", "field": "single_service_array", "expected": true},
+    {"id": "cross-engine-bytes", "field": "cross_engine_bytes_equal", "expected": true},
+    {"id": "utf8-contract", "field": "utf8_no_bom_one_lf", "expected": true},
+    {"id": "idempotent", "field": "idempotent", "expected": true}
+  ]
+}

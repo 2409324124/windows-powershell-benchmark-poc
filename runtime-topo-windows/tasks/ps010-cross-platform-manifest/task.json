@@ -1,0 +1,19 @@
+{
+  "schema": "wcb.task/v2",
+  "id": "ps010-cross-platform-manifest",
+  "difficulty": 10,
+  "shell": "PowerShell 7.6.4 on Windows and Linux",
+  "workspace": "C:\\WCB\\tasks\\PS010 Cross Platform Manifest",
+  "target_files": ["build-manifest.ps1"],
+  "runtime_matrix": ["win-pwsh76", "linux-pwsh76"],
+  "evaluator_scenarios": ["equivalent-trees", "unicode-nonscript-cwd"],
+  "result_checks": [
+    {"id": "both-platforms-exit", "field": "both_platforms_exit_zero", "expected": true},
+    {"id": "manifest-exact", "field": "manifest_exact", "expected": true},
+    {"id": "cross-platform-bytes", "field": "cross_platform_bytes_equal", "expected": true},
+    {"id": "same-submission", "field": "same_submitted_script", "expected": true},
+    {"id": "native-tools", "field": "native_tools_invoked", "expected": true},
+    {"id": "encoding", "field": "utf8_no_bom_one_lf", "expected": true},
+    {"id": "idempotent", "field": "idempotent", "expected": true}
+  ]
+}

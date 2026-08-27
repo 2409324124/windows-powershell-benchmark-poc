@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 from runner.opencode import SshTarget, _execute_control_script
-from runner.real_canary import load_task
+from runner.real_canary import (
+    _evaluator_timeout, _runtime_environment, _wrap_evaluator, load_task,
+)
 from runner.report import utc_now, write_json_atomic
 
 
@@ -60,6 +62,16 @@ def replay_run(
     if metadata.get('run_id') != run_id or not isinstance(task_id, str):
         raise EvaluatorReplayError('metadata identity is invalid')
     task_root, manifest = load_task(project_root, task_id)
+    evaluator_input = None
+    if manifest.get('schema') == 'wcb.task/v2':
+        evaluator_input = _read_json(run_dir / 'evaluator-input.json')
+        if (
+            evaluator_input.get('schema') != 'wcb.evaluator-input/v1'
+            or evaluator_input.get('run_id') != run_id
+            or evaluator_input.get('task') != task_id
+            or evaluator_input.get('scenarios') != manifest.get('evaluator_scenarios')
+        ):
+            raise EvaluatorReplayError('evaluator input identity is invalid')
     snapshot = _read_json(run_dir / 'workspace-snapshot.json')
     if (
         snapshot.get('run_id') != run_id
@@ -113,13 +125,16 @@ try {{
     evaluation = None
     cleanup_error = None
     try:
-        evaluator_script = (
-            f"$env:WCB_EVALUATOR_ROOT='{workspace}'\n"
-            + (task_root / 'evaluate.ps1').read_text(encoding='utf-8')
+        evaluator_script = _wrap_evaluator(
+            (task_root / 'evaluate.ps1').read_text(encoding='utf-8'),
+            evaluator_input,
+            _runtime_environment(config, manifest),
+            evaluator_root=workspace,
         )
         evaluation = _execute_control_script(
             target, evaluator_script,
-            f'wcb-{run_id}-evaluator-replay-run.ps1', timeout=90,
+            f'wcb-{run_id}-evaluator-replay-run.ps1',
+            timeout=_evaluator_timeout(config, manifest),
         )
     finally:
         cleanup = _execute_control_script(
@@ -143,6 +158,7 @@ try {{
         'run_id': run_id,
         'task': task_id,
         'workspace_snapshot': 'workspace-after-agent.zip',
+        'evaluator_input': 'evaluator-input.json' if evaluator_input is not None else None,
         'evaluator': f'tasks/{task_id}/evaluate.ps1',
         'exit_code': evaluation.returncode,
         'result': result,

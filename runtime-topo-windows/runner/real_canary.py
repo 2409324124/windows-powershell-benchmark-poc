@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import uuid
+import zlib
 from pathlib import Path
 
 from runner.opencode import (
@@ -13,6 +14,7 @@ from runner.opencode import (
     _execute_control_script, encoded_powershell,
 )
 from runner.report import JsonlLog, utc_now, write_bytes_atomic, write_json_atomic
+from runner.sidecar import SidecarError, ensure_sidecar
 from runner.vm import ScreenshotMonitor, VisualModeError, require_visual_domain
 
 
@@ -128,14 +130,105 @@ def load_task(project_root: Path, task_id: str) -> tuple[Path, dict]:
     task = project_root / 'tasks' / task_id
     manifest_path = task / 'task.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-    if manifest.get('schema') != 'wcb.task/v1' or manifest.get('id') != task_id:
+    if manifest.get('schema') not in {'wcb.task/v1', 'wcb.task/v2'} or manifest.get('id') != task_id:
         raise ValueError(f'invalid task manifest: {manifest_path}')
     if not isinstance(manifest.get('workspace'), str) or not manifest['workspace'].startswith('C:\\WCB\\tasks\\'):
         raise ValueError(f'invalid task workspace: {manifest_path}')
     for filename in ('setup.ps1', 'prompt.md', 'evaluate.ps1'):
         if not (task / filename).is_file():
             raise ValueError(f'task {task_id} is missing {filename}')
+    if manifest['schema'] == 'wcb.task/v2':
+        runtimes = manifest.get('runtime_matrix')
+        scenarios = manifest.get('evaluator_scenarios')
+        if (
+            not isinstance(runtimes, list) or not runtimes
+            or any(not isinstance(item, str) or not item for item in runtimes)
+            or len(runtimes) != len(set(runtimes))
+        ):
+            raise ValueError(f'invalid task runtime_matrix: {manifest_path}')
+        if (
+            not isinstance(scenarios, list) or len(scenarios) < 2
+            or any(not isinstance(item, str) or not item for item in scenarios)
+            or len(scenarios) != len(set(scenarios))
+        ):
+            raise ValueError(f'invalid task evaluator_scenarios: {manifest_path}')
     return task, manifest
+
+
+def _evaluator_input(manifest: dict, run_id: str) -> dict | None:
+    if manifest.get('schema') != 'wcb.task/v2':
+        return None
+    seed = zlib.crc32(f'{manifest["id"]}:{run_id}'.encode('utf-8')) & 0xffffffff
+    return {
+        'schema': 'wcb.evaluator-input/v1',
+        'run_id': run_id,
+        'task': manifest['id'],
+        'seed': seed,
+        'scenarios': list(manifest['evaluator_scenarios']),
+    }
+
+
+def _runtime_environment(config: dict, manifest: dict) -> dict[str, str]:
+    selected = manifest.get('runtime_matrix', [])
+    if not selected:
+        return {}
+    configured = config.get('runtimes')
+    if not isinstance(configured, dict):
+        raise ValueError('benchmark config has no runtimes section')
+    environment: dict[str, str] = {}
+    for runtime_id in selected:
+        runtime = configured.get(runtime_id)
+        if not isinstance(runtime, dict):
+            raise ValueError(f'benchmark config has no runtime {runtime_id!r}')
+        variable = runtime.get('environment_variable')
+        value = runtime.get('executable') or runtime.get('endpoint')
+        if not isinstance(variable, str) or not variable or not isinstance(value, str) or not value:
+            raise ValueError(f'benchmark runtime {runtime_id!r} is incomplete')
+        environment[variable] = value
+    return environment
+
+
+def _evaluator_timeout(config: dict, manifest: dict) -> int:
+    selected = manifest.get('runtime_matrix', [])
+    if not selected:
+        return 60
+    timeouts = [config['runtimes'][runtime_id].get('timeout_seconds') for runtime_id in selected]
+    if any(type(value) is not int or value <= 0 for value in timeouts):
+        raise ValueError('benchmark runtime timeout_seconds must be positive integers')
+    return max(timeouts)
+
+
+def _wrap_evaluator(
+    script: str,
+    evaluator_input: dict | None,
+    runtime_environment: dict[str, str],
+    *,
+    evaluator_root: str | None = None,
+) -> str:
+    assignments = []
+    if evaluator_root is not None:
+        assignments.append(
+            f"$env:WCB_EVALUATOR_ROOT='{evaluator_root.replace(chr(39), chr(39) * 2)}'"
+        )
+    for name, value in runtime_environment.items():
+        escaped = value.replace("'", "''")
+        assignments.append(f"$env:{name}='{escaped}'")
+    if evaluator_input is None:
+        return '\n'.join((*assignments, script))
+    encoded = base64.b64encode(
+        json.dumps(evaluator_input, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    ).decode('ascii')
+    assignments.extend((
+        "$inputRoot='C:\\WCB\\evaluator-inputs'",
+        "New-Item -ItemType Directory -Path $inputRoot -Force | Out-Null",
+        f"$inputPath=Join-Path $inputRoot '{evaluator_input['run_id']}.json'",
+        f"[IO.File]::WriteAllBytes($inputPath,[Convert]::FromBase64String('{encoded}'))",
+        '$env:WCB_EVALUATOR_INPUT=$inputPath',
+        'try {',
+        script,
+        '} finally { Remove-Item -LiteralPath $inputPath -Force -ErrorAction SilentlyContinue }',
+    ))
+    return '\n'.join(assignments)
 
 
 def _record_stdout(agent_log: JsonlLog, raw_stdout: bytes) -> None:
@@ -197,6 +290,21 @@ def run(
     ):
         print(f'invalid explicit run id for {task_id}: {run_id!r}', file=sys.stderr)
         return 2
+    workspace = task_manifest['workspace']
+    try:
+        runtime_environment = _runtime_environment(config, task_manifest)
+        evaluator_timeout = _evaluator_timeout(config, task_manifest)
+    except ValueError as error:
+        print(f'Unable to load task runtimes: {error}', file=sys.stderr)
+        return 2
+    if 'linux-pwsh76' in task_manifest.get('runtime_matrix', []):
+        try:
+            sidecar = ensure_sidecar(config, project_root, target)
+        except (OSError, SidecarError, subprocess.TimeoutExpired) as error:
+            print(f'Unable to prepare Linux sidecar: {error}', file=sys.stderr)
+            return 2
+    else:
+        sidecar = None
     run_dir = output_root / run_id
     if run_dir.exists():
         print(f'run directory already exists: {run_dir}', file=sys.stderr)
@@ -204,11 +312,12 @@ def run(
     orchestrator = JsonlLog(run_dir / 'orchestrator.jsonl', 'orchestrator')
     agent_log = JsonlLog(run_dir / 'agent.jsonl', 'agent')
     evaluator_log = JsonlLog(run_dir / 'evaluator.jsonl', 'evaluator')
-    workspace = task_manifest['workspace']
     orchestrator.emit(
         'run_started', run_id=run_id, domain=domain, task=task_id,
         visual=visual, console_session_id=console.session_id,
     )
+    if sidecar is not None:
+        orchestrator.emit('sidecar_ready', **sidecar)
 
     setup = _execute_control_script(
         target, (task / 'setup.ps1').read_text(encoding='utf-8'),
@@ -459,6 +568,14 @@ def run(
     )
     orchestrator.emit('agent_finished', exit_code=agent_exit, timed_out=timed_out)
 
+    evaluator_input = _evaluator_input(task_manifest, run_id)
+    if evaluator_input is not None:
+        write_json_atomic(run_dir / 'evaluator-input.json', evaluator_input)
+        orchestrator.emit(
+            'evaluator_input_created', artifact='evaluator-input.json',
+            schema=evaluator_input['schema'], scenarios=evaluator_input['scenarios'],
+        )
+
     snapshot_complete = False
     try:
         snapshot = _capture_workspace_snapshot(target, workspace, run_id)
@@ -482,9 +599,14 @@ def run(
 
     if screenshots is not None:
         screenshots.evaluator_before()
-    evaluator_script = (task / 'evaluate.ps1').read_text(encoding='utf-8')
+    evaluator_script = _wrap_evaluator(
+        (task / 'evaluate.ps1').read_text(encoding='utf-8'),
+        evaluator_input,
+        runtime_environment,
+    )
     evaluation = _execute_control_script(
-        target, evaluator_script, f'wcb-{run_id}-task-evaluate.ps1', timeout=60,
+        target, evaluator_script, f'wcb-{run_id}-task-evaluate.ps1',
+        timeout=evaluator_timeout,
     )
     eval_stdout = evaluation.stdout.decode('utf-8', 'replace').strip()
     try:
@@ -500,6 +622,8 @@ def run(
         'variant_explicit': variant_explicit, 'agent_exit': agent_exit,
         'workspace': workspace,
         'workspace_snapshot': 'workspace-after-agent.zip' if snapshot_complete else None,
+        'evaluator_input': 'evaluator-input.json' if evaluator_input is not None else None,
+        'runtime_matrix': task_manifest.get('runtime_matrix', []),
         'timed_out': timed_out, 'evaluator_exit': evaluation.returncode,
         'finished_at': utc_now(),
     }

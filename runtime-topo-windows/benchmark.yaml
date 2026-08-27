@@ -18,6 +18,32 @@ runtime:
   ssh_timeout_seconds: 120
   agent_timeout_seconds: 300
   keep_on_failure: false
+runtimes:
+  win-ps51:
+    platform: windows
+    executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+    environment_variable: WCB_RUNTIME_WIN_PS51
+    timeout_seconds: 120
+  win-pwsh76:
+    platform: windows
+    executable: 'C:\Program Files\PowerShell\7\pwsh.exe'
+    environment_variable: WCB_RUNTIME_WIN_PWSH76
+    timeout_seconds: 120
+  linux-pwsh76:
+    platform: linux-container
+    endpoint: '192.168.122.1:2222'
+    environment_variable: WCB_RUNTIME_LINUX_PWSH76
+    timeout_seconds: 120
+sidecar:
+  container_name: wcb-ps7-linux-sidecar
+  image: wcb/ps7-sidecar:7.6.4
+  network: wcb-ps7-internal
+  listen_address: 192.168.122.1
+  port: 2222
+  ssh_key: /mnt/PM983/windows-benchmark/config/keys/wcb-ps7-sidecar-ed25519
+  windows_key_path: 'C:\WCB\keys\ps7-sidecar-ed25519'
+  windows_known_hosts_path: 'C:\WCB\keys\ps7-sidecar-known-hosts'
+  windows_user: wcb-agent-admin
 opencode:
   executable: 'C:\Program Files\OpenCode\1.18.21\opencode.exe'
   model: opencode-go/deepseek-v4-flash

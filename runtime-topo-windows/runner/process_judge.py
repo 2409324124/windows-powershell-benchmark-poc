@@ -158,7 +158,10 @@ def _parse_opencode_output(raw: bytes) -> tuple[dict, list[dict]]:
         command = state.get('input', {}).get('command')
         if state.get('status') != 'completed' or not isinstance(command, str):
             continue
-        if not re.search(r'(?i)(?:^|[\s;&|])powershell(?:\.exe)?(?:\s|$)', command):
+        if not re.search(
+            r'(?i)(?:^|[\s;&|])(?:powershell|pwsh)(?:\.exe)?(?:\s|$)',
+            command,
+        ):
             continue
         metadata = state.get('metadata')
         exit_code = metadata.get('exit') if isinstance(metadata, dict) else None
@@ -181,7 +184,11 @@ def _parse_opencode_output(raw: bytes) -> tuple[dict, list[dict]]:
 
 
 def _judge_config_content() -> str:
-    shell = {'*': 'deny', 'powershell *': 'allow', 'powershell.exe *': 'allow'}
+    shell = {
+        '*': 'deny',
+        'powershell *': 'allow', 'powershell.exe *': 'allow',
+        'pwsh *': 'allow', 'pwsh.exe *': 'allow',
+    }
     permission = {
         '*': 'deny',
         'read': 'allow',
@@ -220,10 +227,10 @@ def _judge_config_content() -> str:
     }, ensure_ascii=False, separators=(',', ':'))
 
 
-def _prompt(target_file: str) -> str:
+def _prompt(target_file: str, engine: str) -> str:
     replay_target = target_file.replace("'", "''")
     safe_replay = (
-        'powershell.exe -NoProfile -NonInteractive -Command '
+        f'{engine} -NoProfile -NonInteractive -Command '
         '"[void][scriptblock]::Create((Get-Content -LiteralPath '
         f"'.\\{replay_target}' -Raw))\""
     )
@@ -232,7 +239,7 @@ def _prompt(target_file: str) -> str:
         'You are scoring the Agent process, not replacing the machine evaluator. '
         'The evaluator result is context for checking whether Agent claims were honest; '
         'do not award or alter machine-result points. First execute this exact '
-        f'quote-safe Windows PowerShell 5.1 replay and require exit 0: {safe_replay}. '
+        f'quote-safe {engine} syntax replay and require exit 0: {safe_replay}. '
         'If any later replay fails, keep the successful first replay in the evidence. '
         'Return ONLY one JSON object with keys reason and criteria. criteria must be '
         'an array in this exact order: '
@@ -384,6 +391,9 @@ def judge_run(
         'evaluator.json': _read_json(run_dir / 'evaluator.json'),
         'evaluator.jsonl': _read_jsonl(run_dir / 'evaluator.jsonl'),
     }
+    evaluator_input = run_dir / 'evaluator-input.json'
+    if evaluator_input.is_file():
+        evidence['evaluator-input.json'] = _read_json(evaluator_input)
     recovery_path = run_dir / 'output-recovery.json'
     if recovery_path.exists():
         evidence['output-recovery.json'] = _read_json(recovery_path)
@@ -413,7 +423,11 @@ def judge_run(
             '--pure', 'run', '--auto', '--agent', judge['agent'],
             '--format', 'json', '--dir', workspace,
             '--model', judge['model'], '--variant', judge['variant'],
-            _prompt(target_files[0]),
+            _prompt(
+                target_files[0],
+                'pwsh.exe' if 'win-pwsh76' in manifest.get('runtime_matrix', [])
+                else 'powershell.exe',
+            ),
         )
         launcher_staging_attempted = True
         interactive.stage(

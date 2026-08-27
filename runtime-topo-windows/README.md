@@ -13,7 +13,7 @@ python3 -m runner.run transport-canary --output /home/miku/runtime-topo-windows/
 
 Formal runs will use `/mnt/PM983/windows-benchmark/runs`, a protected base image, per-run qcow2/NVRAM/TPM state, and three append-only JSONL streams: `orchestrator.jsonl`, `agent.jsonl`, and `evaluator.jsonl`.
 
-## PowerShell 5.1 task ladder
+## PowerShell task ladders
 
 The catalog contains five tasks from exact UTF-8 output through transactional
 deployment. Each evaluator launches the submitted script with Windows
@@ -33,6 +33,16 @@ python3 -m runner.run opencode-canary \
 Valid task IDs are `ps001-utf8-output`, `ps002-path-quoting`,
 `ps003-native-exit`, `ps004-parallel-merge`, and
 `ps005-transactional-deploy`.
+
+PS006–PS010 add a task-v2 runtime matrix. The Windows engines are locked to
+Windows PowerShell 5.1 and PowerShell 7.6.4 by full executable path. PS008 and
+PS010 also use the repository's isolated Linux PowerShell 7.6.4/OpenSSH
+container. The sidecar exposes only its dedicated subsystem on the libvirt
+gateway port 2222, has no public egress, and receives no host workspace mount.
+
+For v2 tasks, the Runner creates `evaluator-input.json` after Agent exit and
+before freezing the workspace. Evaluator replay consumes that exact artifact;
+it never chooses a new hidden scenario.
 
 ## Separate Runner, Process Judge, and Scorer
 

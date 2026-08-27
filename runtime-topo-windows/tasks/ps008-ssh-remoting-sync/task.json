@@ -1,0 +1,18 @@
+{
+  "schema": "wcb.task/v2",
+  "id": "ps008-ssh-remoting-sync",
+  "difficulty": 8,
+  "shell": "PowerShell 7.6.4 with SSH remoting",
+  "workspace": "C:\\WCB\\tasks\\PS008 SSH Remoting Sync",
+  "target_files": ["sync.ps1"],
+  "runtime_matrix": ["win-pwsh76", "linux-pwsh76"],
+  "evaluator_scenarios": ["remote-success", "remote-exit-37"],
+  "result_checks": [
+    {"id": "true-remoting", "field": "true_powershell_remoting", "expected": true},
+    {"id": "success-receipt", "field": "success_receipt_exact", "expected": true},
+    {"id": "persistent-session", "field": "persistent_session", "expected": true},
+    {"id": "failure-exit", "field": "failure_exit_37", "expected": true},
+    {"id": "session-cleanup", "field": "session_closed", "expected": true},
+    {"id": "remote-cleanup", "field": "remote_residue_zero", "expected": true}
+  ]
+}

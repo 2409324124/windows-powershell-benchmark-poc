@@ -6,7 +6,7 @@
 
 # Windows PowerShell Coding-Agent Benchmark
 
-在真实、可观察的 KVM/QEMU Windows Server 2025 桌面中，评测 coding agent 修复 PowerShell 5.1 工程任务的能力。
+在真实、可观察的 KVM/QEMU Windows Server 2025 桌面中，评测 coding agent 修复 Windows PowerShell 5.1 与 PowerShell 7 工程任务的能力。
 
 项目不把一次成功的命令或模型自己的完成声明当作成绩。Agent 停止后，Runner 会冻结工作区和结构化运行记录，再由独立的 Windows Judge 审核执行过程、机器 evaluator 检查最终行为，最后生成每次运行独立的 `0–100` 能力分。
 
@@ -56,6 +56,20 @@
 
 详细题目说明见 [`runtime-topo-windows/tasks/README.md`](runtime-topo-windows/tasks/README.md)。每道题均由 Windows PowerShell 5.1 执行隐藏 evaluator，而不是用 PowerShell 7 替代。
 
+## PowerShell 7 高难度题库（开发中）
+
+PS006–PS010 已在工作分支加入，尚未计入 v0.1.0 的 5×5 发布矩阵：
+
+| Level | Task | 运行环境 | 核心能力 |
+|---:|---|---|---|
+| 6 | `ps006-dual-engine-pipeline` | Windows PS5.1 + PS7.6.4 | 对象管道与跨引擎精确字节 |
+| 7 | `ps007-parallel-runspace-fanout` | Windows PS7.6.4 | Runspace、ThrottleLimit 4、native 失败传播 |
+| 8 | `ps008-ssh-remoting-sync` | Windows + Linux 容器 PS7.6.4 | 真正 PowerShell SSH Remoting 与清理 |
+| 9 | `ps009-native-byte-pipeline` | Windows PS7.6.4 | 原生二进制管道与原子发布 |
+| 10 | `ps010-cross-platform-manifest` | Windows + Linux 容器 PS7.6.4 | 同脚本跨平台确定性输出 |
+
+Linux 端是无宿主工作区挂载、无公网出口的隔离容器，不是第二台虚拟机。新题的隐藏场景在 Agent 停止后生成，并随冻结证据保存供 evaluator replay 使用。
+
 ## 整体架构
 
 ```text
@@ -70,7 +84,8 @@
 │  ├─ libvirt + QEMU/KVM                   ├─ 冻结 workspace ZIP             │
 │  ├─ qcow2 base + approved overlay        ├─ JSONL、进程身份、截图          │
 │  ├─ VM 状态和残留门禁                    ├─ 每次独立 score.json            │
-│  └─ SSH control plane ───────────────┐   └─ matrix/score report            │
+│  ├─ SSH control plane ───────────────┐   └─ matrix/score report            │
+│  └─ isolated Linux PS7 sidecar       │                                     │
 │                                      │                                     │
 │  Human Observer ── restricted SPICE ─┼───────────────┐                     │
 │  （只观察；clipboard/file transfer 均禁用）           │                    │
@@ -181,7 +196,7 @@ run root
 ## 仓库结构
 
 - [`runtime-topo-windows/`](runtime-topo-windows/)：KVM Windows runtime、Runner、Judge、Scorer 和矩阵控制器。
-- [`runtime-topo-windows/tasks/`](runtime-topo-windows/tasks/)：PS001–PS005 题目、初始化和隐藏 evaluator。
+- [`runtime-topo-windows/tasks/`](runtime-topo-windows/tasks/)：PS001–PS010 题目、初始化和隐藏 evaluator。
 - [`runtime-topo-windows/config/low-tier-5x5.yaml`](runtime-topo-windows/config/low-tier-5x5.yaml)：v0.1.0 五模型矩阵定义。
 - [`runtime-topo-windows/artifacts/`](runtime-topo-windows/artifacts/)：已公开的早期脱敏运行材料。
 - [`results/`](results/) 与根目录 PowerShell runner：早期 W01/W02 本地 PoC。

@@ -1,0 +1,19 @@
+{
+  "schema": "wcb.task/v2",
+  "id": "ps007-parallel-runspace-fanout",
+  "difficulty": 7,
+  "shell": "PowerShell 7.6.4",
+  "workspace": "C:\\WCB\\tasks\\PS007 Parallel Runspace Fanout",
+  "target_files": ["fanout.ps1"],
+  "runtime_matrix": ["win-pwsh76"],
+  "evaluator_scenarios": ["all-success", "worker-exit-23"],
+  "result_checks": [
+    {"id": "parallel-construct", "field": "parallel_construct", "expected": true},
+    {"id": "success-manifest", "field": "success_manifest_exact", "expected": true},
+    {"id": "true-concurrency", "field": "true_concurrency", "expected": true},
+    {"id": "throttle-limit", "field": "throttle_limit_respected", "expected": true},
+    {"id": "native-boundaries", "field": "native_boundaries_exact", "expected": true},
+    {"id": "failure-propagation", "field": "failure_exit_23_no_publish", "expected": true},
+    {"id": "no-workers", "field": "no_lingering_workers", "expected": true}
+  ]
+}
