@@ -58,64 +58,138 @@
 
 ## 整体架构
 
+上部是被测 Windows 工作负载与外部模型服务；横跨下部的 Linux/KVM Host 是承载 VM、证据和评分链路的基础层。
+
 ```mermaid
 flowchart TB
-  subgraph HOST["Linux / KVM Host"]
+  subgraph UPPER["Evaluation workload"]
     direction LR
-    MATRIX["Matrix Controller<br/>config · schedule · resume"]
-    KVM["QEMU/KVM + libvirt<br/>qcow2 · SPICE · VM gates"]
-    OBSERVER["Human Observer<br/>view only"]
-    EVIDENCE[("Run Evidence<br/>ZIP · JSONL · identity · screenshots")]
-    SCORER["Host Scorer<br/>process 0–50 + result 0–50"]
-    REPORTS[("Per-run score + reports<br/>valid / infrastructure_failure")]
-  end
 
-  subgraph GUEST["Windows Server 2025 Guest VM"]
-    direction TB
-    CONTROL["Administrator SSH Control<br/>setup · capture · cleanup"]
+    subgraph GUEST["KVM Guest"]
+      direction TB
 
-    subgraph DESKTOP["Active Console · Medium Integrity"]
-      direction LR
-      AGENT["OpenCode Agent<br/>model under test"]
-      JUDGE["Hidden OpenCode Judge<br/>GPT-5.6 Luna / low"]
+      subgraph GUEST_APPS["Benchmark applications"]
+        direction LR
+        subgraph HARNESS["OpenCode harness · Active Console · Medium Integrity"]
+          direction LR
+          AGENT["Agent<br/>model under test"]
+          JUDGE["Hidden Judge<br/>GPT-5.6 Luna / low"]
+        end
+        EVALUATOR["PowerShell 5.1 machine evaluator<br/>final-behavior checks"]
+      end
+
+      subgraph WINDOWS["Windows Server 2025 OS"]
+        direction LR
+        CONTROL["Administrator SSH control plane<br/>setup · launch · capture · cleanup"]
+        WORKSPACE[("Task workspace<br/>state frozen after Agent exit")]
+      end
+
+      VIRTUAL_HW["Virtual hardware<br/>vCPU · RAM · disk · vNIC · display"]
     end
 
-    WORKSPACE["Task Workspace<br/>state after Agent exit"]
-    EVALUATOR["PowerShell 5.1 Evaluator<br/>machine behavior checks"]
+    subgraph PROVIDER["External model provider"]
+      direction TB
+      TESTED["Models under test<br/>DeepSeek · Qwen · HY3 · MiMo · LongCat"]
+      LUNA["Judge model<br/>GPT-5.6 Luna / low"]
+    end
+
+    UPPER_FLOOR[" "]:::layout
   end
 
-  subgraph PROVIDER["External Model Provider"]
-    direction LR
-    TESTED["Models under test<br/>DeepSeek · Qwen · HY3 · MiMo · LongCat"]
-    LUNA["Judge model<br/>GPT-5.6 Luna / low"]
+  subgraph HOST["Linux / KVM Host · foundation"]
+    direction TB
+
+    HOST_CEILING[" "]:::layout
+
+    subgraph HOST_USERSPACE["Host userspace"]
+      direction LR
+      MATRIX["Matrix Controller<br/>config · schedule · resume"]
+      RUNNER["Runner<br/>VM gates · SSH orchestration"]
+      OBSERVER["Human observer<br/>view only"]
+      EVIDENCE[("Frozen run evidence<br/>ZIP · JSONL · identity · screenshots")]
+      SCORER["Host Scorer<br/>process 0–50 + result 0–50"]
+      REPORTS[("Scores and reports<br/>valid / infrastructure_failure")]
+    end
+
+    subgraph VIRT_USERSPACE["Virtualization userspace"]
+      direction LR
+      LIBVIRT["libvirt<br/>domain lifecycle"]
+      QEMU["QEMU<br/>device emulation"]
+      SPICE["Restricted SPICE<br/>display + screenshots"]
+      OVERLAY[("Approved qcow2 overlay")]
+    end
+
+    subgraph LINUX_KERNEL["Linux kernel"]
+      direction LR
+      KVM["KVM<br/>CPU virtualization"]
+      DRIVERS["Storage + network drivers"]
+    end
+
+    PHYSICAL["Physical host<br/>CPU · RAM · NVMe"]
   end
 
-  MATRIX -->|"domain + overlay gates"| KVM
-  MATRIX -->|"SSH control"| CONTROL
-  KVM -->|"runs guest"| CONTROL
-  KVM -->|"framebuffer screenshots"| EVIDENCE
-  OBSERVER -.->|"restricted SPICE view"| AGENT
-  CONTROL -->|"start Limited interactive task"| AGENT
-  CONTROL -->|"collect logs + identity"| EVIDENCE
-  AGENT <-->|"request / response"| TESTED
-  AGENT -->|"modify + verify"| WORKSPACE
-  WORKSPACE -->|"freeze ZIP after exit"| EVIDENCE
-  EVIDENCE -->|"stage disposable copy + runtime"| JUDGE
-  JUDGE <-->|"request / response"| LUNA
-  JUDGE -->|"PowerShell replay + process score"| EVIDENCE
-  WORKSPACE -->|"hidden checks after snapshot"| EVALUATOR
-  CONTROL -->|"launch evaluator"| EVALUATOR
-  EVALUATOR -->|"result score"| EVIDENCE
+  AGENT <-->|"model API"| TESTED
+  JUDGE <-->|"judge API"| LUNA
+  AGENT -.-|"started as Limited interactive task"| CONTROL
+  AGENT -->|"modifies + verifies"| WORKSPACE
+  EVALUATOR -.-|"checks after snapshot"| WORKSPACE
+
+  CONTROL ---|"SSH control channel"| RUNNER
+  AGENT -.-|"visible through restricted SPICE"| SPICE
+  OBSERVER -.-|"view only"| SPICE
+  WORKSPACE -->|"freeze after Agent exit"| EVIDENCE
+
+  VIRTUAL_HW -->|"implemented by"| QEMU
+  MATRIX --> RUNNER --> LIBVIRT
+  LIBVIRT --> QEMU
+  OVERLAY --> QEMU
+  SPICE -->|"framebuffer screenshots"| EVIDENCE
+  QEMU --> KVM --> PHYSICAL
+  QEMU --> DRIVERS --> PHYSICAL
   EVIDENCE --> SCORER --> REPORTS
+
+  VIRTUAL_HW ~~~ UPPER_FLOOR
+  TESTED ~~~ UPPER_FLOOR
+  LUNA ~~~ UPPER_FLOOR
+  UPPER_FLOOR ~~~ HOST_CEILING
+  HOST_CEILING ~~~ MATRIX
+  HOST_CEILING ~~~ RUNNER
+  HOST_CEILING ~~~ EVIDENCE
+
+  classDef layout fill:none,stroke:none,color:transparent
 ```
 
-| 组件 | 运行位置 | 职责 |
-|---|---|---|
-| Matrix Controller / Scorer | Linux host | 调度 VM、保存证据、组合两个 50 分项并生成报告 |
-| OpenCode Agent | Windows 可视 Medium 桌面 | 调用外部被测模型，修改脚本并执行验证 |
-| OpenCode Judge | Agent 退出后的同一 Windows Medium 桌面 | 独立调用 Luna，阅读 Host 回传的冻结副本、执行 PowerShell 重放并给出过程分 |
-| Machine Evaluator | Windows guest 的隐藏 PowerShell 5.1 进程 | 检查最终功能行为并给出结果分 |
-| SPICE Viewer | Linux host | benchmark 只用于观察；clipboard 和 file transfer 禁用，不使用键盘鼠标干预 |
+评测链路与部署层次分开表达：Agent 结束后先冻结证据，Judge 和机器 evaluator 各自产生一个 50 分项，最后才由 Linux Host 上的 Scorer 合并为单题能力分。
+
+```mermaid
+flowchart LR
+  AGENT_RUN["Windows Agent<br/>model under test"]
+  FREEZE[("Host freezes run evidence<br/>workspace · runtime · identity · screenshots")]
+  PROCESS_JUDGE["Windows OpenCode Judge<br/>disposable staged copy"]
+  MACHINE_EVAL["Windows PowerShell 5.1 evaluator<br/>post-Agent workspace"]
+  PROCESS_SCORE["Process score<br/>0–50"]
+  RESULT_SCORE["Result score<br/>0–50"]
+  HOST_SCORER["Linux Host Scorer"]
+  FINAL[("Independent task score<br/>0–100 + validity status")]
+
+  AGENT_RUN -->|"exit + capture"| FREEZE
+  FREEZE --> PROCESS_JUDGE --> PROCESS_SCORE
+  FREEZE --> MACHINE_EVAL --> RESULT_SCORE
+  PROCESS_SCORE --> HOST_SCORER
+  RESULT_SCORE --> HOST_SCORER
+  HOST_SCORER --> FINAL
+```
+
+| 系统层级 | 组件 | 实际位置 | 职责 |
+|---|---|---|---|
+| External model provider | 被测模型、GPT-5.6 Luna Judge | Guest 外部的模型服务 | 分别为 Agent 和 Judge 提供模型推理；不保存或组合最终评分 |
+| Windows applications | OpenCode Agent、OpenCode Judge、PowerShell 5.1 evaluator | Windows guest | Agent 修改并验证任务；Judge 审核运行过程；evaluator 检查最终功能行为 |
+| Windows session / OS | Medium 活动控制台、Administrator SSH 控制面、任务工作区 | Windows Server 2025 guest | 承载可视 Agent/Judge 进程、受控启动、证据捕获与题目文件 |
+| Guest virtual hardware | vCPU、内存、虚拟磁盘、vNIC、显示设备 | KVM guest 边界 | 向 Windows 提供由 QEMU/KVM 实现的虚拟硬件 |
+| Host userspace | Matrix Controller、Runner、Evidence Store、Scorer | Linux host | 调度矩阵、控制 VM、冻结证据、组合两个 50 分项并生成报告 |
+| Virtualization userspace | libvirt、QEMU、SPICE、qcow2 overlay | Linux host | 管理 VM 生命周期、设备仿真、磁盘层和受限可视通道 |
+| Linux kernel | KVM、存储与网络驱动 | Linux host kernel | 提供 CPU 虚拟化以及物理 I/O 路径 |
+| Physical host | CPU、RAM、NVMe | Linux 主机硬件 | 承载整个 Windows/KVM benchmark 环境 |
 
 Judge 与被测 Agent 是两个不同的 Windows OpenCode 进程，实际模型推理由外部 provider 完成。Judge 只能在 Agent 完全退出、工作区已经回收到 Host 并冻结后启动；Linux Scorer 不调用模型，也不允许 Judge 修改机器 evaluator 的结果。
 
