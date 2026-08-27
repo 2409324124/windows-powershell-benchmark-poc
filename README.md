@@ -62,18 +62,18 @@
 ┌──────────────────────────── Linux / KVM Host ──────────────────────────────┐
 │                                                                            │
 │  Matrix Controller                                                         │
-│  ├─ 读取 benchmark.yaml + low-tier-5x5.yaml                                │
-│  ├─ 串行调度 smoke → Agent → Judge → Score → cleanup                       │
-│  └─ 保存 matrix-state.json，支持从安全阶段 --resume                        │
+│  ├─ 读取 benchmark.yaml + low-tier-5x5.yaml                                 │
+│  ├─ 串行调度 smoke → Agent → Judge → Score → cleanup                        │
+│  └─ 保存 matrix-state.json，支持从安全阶段 --resume                           │
 │                                                                            │
 │  Host Supervisor                         Evidence / Scoring                │
-│  ├─ libvirt + QEMU/KVM                   ├─ 冻结 workspace ZIP             │
-│  ├─ qcow2 base + approved overlay        ├─ JSONL、进程身份、截图          │
-│  ├─ VM 状态和残留门禁                    ├─ 每次独立 score.json            │
+│  ├─ libvirt + QEMU/KVM                   ├─ 冻结 workspace ZIP              │
+│  ├─ qcow2 base + approved overlay        ├─ JSONL、进程身份、截图             │
+│  ├─ VM 状态和残留门禁                      ├─ 每次独立 score.json              │
 │  └─ SSH control plane ───────────────┐   └─ matrix/score report            │
 │                                      │                                     │
 │  Human Observer ── restricted SPICE ─┼───────────────┐                     │
-│  （只观察；clipboard/file transfer 均禁用）           │                    │
+│  （只观察；clipboard/file transfer 均禁用）             │                     │
 └──────────────────────────────────────┼───────────────┼─────────────────────┘
                                        │               │
                          setup / capture / evaluator   │ visible desktop
@@ -81,19 +81,19 @@
 ┌──────────────────────────── Windows Server 2025 Guest ─────────────────────┐
 │                                      │               │                     │
 │  Administrator SSH control session ◄─┘               │                     │
-│  ├─ 创建全新题目工作区                                │                    │
-│  ├─ Agent 停止后冻结工作区                            │                    │
-│  ├─ 隐藏执行 PowerShell 5.1 evaluator                 │                    │
-│  └─ 收集证据并清理                                    │                    │
+│  ├─ 创建全新题目工作区                                  │                     │
+│  ├─ Agent 停止后冻结工作区                             │                      │
+│  ├─ 隐藏执行 PowerShell 5.1 evaluator                 │                     │
+│  └─ 收集证据并清理                                     │                     │
 │                                                      ▼                     │
 │  Active Console · Medium integrity                                         │
 │  Explorer → Limited interactive task → launcher → OpenCode Agent           │
-│                                                   ├─ 修改目标脚本          │
-│                                                   └─ 执行验证命令          │
+│                                                   ├─ 修改目标脚本            │
+│                                                   └─ 执行验证命令            │
 │                                                                            │
-│  Agent 结束并冻结证据后：                                                  │
-│  Hidden OpenCode Luna Judge → 读取运行记录 → PowerShell 重放 → 过程 0–50   │
-│  Hidden machine evaluator  → 检查最终行为                  → 结果 0–50     │
+│  Agent 结束并冻结证据后：                                                     │
+│  Hidden OpenCode Luna Judge → 读取运行记录 → PowerShell 重放 → 过程 0–50       │
+│  Hidden machine evaluator  → 检查最终行为                  → 结果 0–50        │
 └──────────────────────────────────────┬─────────────────────────────────────┘
                                        │ structured results
                                        ▼
