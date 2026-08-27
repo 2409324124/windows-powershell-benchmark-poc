@@ -227,7 +227,7 @@ class ScoreRunTests(unittest.TestCase):
                 run_dir, manifest('first', 'second'), TASK_PROMPT,
             )
 
-            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['status'], 'valid')
             self.assertEqual(result['score'], 100)
             self.assertEqual(result['process']['process_score'], 50)
             self.assertEqual(
@@ -241,11 +241,11 @@ class ScoreRunTests(unittest.TestCase):
 
             result = score(run_dir, manifest('first', 'second'), judge)
 
-            self.assertEqual(result['schema'], 'wcb.score/v2')
+            self.assertEqual(result['schema'], 'wcb.score/v3')
             self.assertEqual(result['score'], 100)
-            self.assertTrue(result['passed'])
-            self.assertEqual(result['status'], 'passed')
-            self.assertEqual(result['classification'], 'passed')
+            self.assertEqual(result['status'], 'valid')
+            self.assertNotIn('passed', result)
+            self.assertNotIn('classification', result)
             self.assertEqual(result['model'], 'example/model')
             self.assertEqual(result['variant'], 'medium')
             self.assertEqual(result['duration_seconds'], 4)
@@ -268,7 +268,7 @@ class ScoreRunTests(unittest.TestCase):
             self.assertEqual(len(judge.calls[0]['evaluator_records']), 1)
             self.assertEqual(judge.calls[0]['result_breakdown']['score'], 50)
 
-    def test_partial_judge_score_produces_model_failure(self) -> None:
+    def test_partial_judge_score_is_a_valid_ability_measurement(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = make_complete_run(Path(temporary))
 
@@ -279,8 +279,10 @@ class ScoreRunTests(unittest.TestCase):
 
             self.assertEqual(result['process']['process_score'], 31)
             self.assertEqual(result['score'], 81)
-            self.assertEqual(result['status'], 'model_failure')
-            self.assertFalse(result['passed'])
+            self.assertEqual(result['schema'], 'wcb.score/v3')
+            self.assertEqual(result['status'], 'valid')
+            self.assertNotIn('passed', result)
+            self.assertNotIn('classification', result)
 
     def test_invalid_judge_output_is_infrastructure_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -380,10 +382,10 @@ class ScoreRunTests(unittest.TestCase):
 
             result = score(run_dir, manifest('first', 'second'))
 
-            self.assertEqual(result['status'], 'model_failure')
-            self.assertEqual(result['classification'], 'model_failure')
+            self.assertEqual(result['status'], 'valid')
             self.assertEqual(result['score'], 75)
-            self.assertFalse(result['passed'])
+            self.assertNotIn('passed', result)
+            self.assertNotIn('classification', result)
 
     def test_evaluator_passed_must_exist_and_be_boolean(self) -> None:
         for invalid in (None, 'true'):
@@ -470,10 +472,11 @@ class ScoreRunTests(unittest.TestCase):
 
             result = score(run_dir, manifest('first', 'second'))
 
+            self.assertEqual(result['schema'], 'wcb.score/v3')
             self.assertIsNone(result['score'])
-            self.assertIsNone(result['passed'])
             self.assertEqual(result['status'], 'infrastructure_failure')
-            self.assertEqual(result['classification'], 'infrastructure_failure')
+            self.assertNotIn('passed', result)
+            self.assertNotIn('classification', result)
             for field in (
                 'model', 'variant', 'duration_seconds', 'tokens', 'cost',
             ):
@@ -548,7 +551,7 @@ class ScoreRunTests(unittest.TestCase):
 
             result = score(run_dir, manifest('first', 'second'))
 
-            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['status'], 'valid')
 
     def test_visual_provider_default_requires_variant_flag_to_be_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -592,7 +595,7 @@ class ScoreRunTests(unittest.TestCase):
             write_jsonl(run_dir / 'agent.jsonl', agent_records)
 
             result = score(run_dir, manifest('first', 'second'))
-            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['status'], 'valid')
 
             identity['command_line'] += ' --variant low'
             write_json(run_dir / 'interactive-process.json', identity)
@@ -650,7 +653,7 @@ class ScoreRunTests(unittest.TestCase):
 
             result = score(run_dir, task_manifest)
 
-            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['status'], 'valid')
             self.assertEqual(result['score'], 100)
 
     def test_visual_identity_mismatch_is_infrastructure_failure(self) -> None:
@@ -742,9 +745,10 @@ class ScoreRunTests(unittest.TestCase):
                 FakeJudge(20, 'The run timed out before completing the process.'),
             )
 
-            self.assertEqual(result['status'], 'model_failure')
+            self.assertEqual(result['status'], 'valid')
             self.assertEqual(result['score'], 70)
-            self.assertFalse(result['passed'])
+            self.assertNotIn('passed', result)
+            self.assertNotIn('classification', result)
 
     def test_old_v1_missing_declared_result_field_is_infrastructure_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -759,7 +763,8 @@ class ScoreRunTests(unittest.TestCase):
 
             self.assertEqual(result['status'], 'infrastructure_failure')
             self.assertIsNone(result['score'])
-            self.assertIsNone(result['passed'])
+            self.assertNotIn('passed', result)
+            self.assertNotIn('classification', result)
             self.assertTrue(any(
                 "missing declared result field 'powershell_51_exit'" in error
                 for error in result['errors']
@@ -839,7 +844,7 @@ class ScoreRootTests(unittest.TestCase):
             self.assertTrue((second / 'score.json').is_file())
             self.assertFalse((other / 'score.json').is_file())
             report = json.loads((root / 'runs' / 'score-report.json').read_text(encoding='utf-8'))
-            self.assertEqual(report['schema'], 'wcb.score-report/v2')
+            self.assertEqual(report['schema'], 'wcb.score-report/v3')
             self.assertEqual([item['run_id'] for item in report['runs']], [
                 'opencode-ps999-first', 'opencode-ps999-second',
             ])
@@ -848,9 +853,11 @@ class ScoreRootTests(unittest.TestCase):
             for item in report['runs']:
                 for field in (
                     'model', 'variant', 'duration_seconds', 'tokens', 'cost',
-                    'status', 'classification', 'score', 'passed',
+                    'status', 'score',
                 ):
                     self.assertIn(field, item)
+                self.assertNotIn('classification', item)
+                self.assertNotIn('passed', item)
                 self.assertNotIn('duration', item)
                 self.assertNotIn('token', item)
 

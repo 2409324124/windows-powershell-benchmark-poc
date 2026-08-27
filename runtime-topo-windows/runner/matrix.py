@@ -179,7 +179,7 @@ def _matrix_report(state: dict, output_root: Path) -> dict:
             'cost': score.get('cost'),
         })
     return {
-        'schema': 'wcb.matrix-report/v1',
+        'schema': 'wcb.matrix-report/v2',
         'matrix_id': state['matrix_id'],
         'status': state['status'],
         'updated_at': state['updated_at'],

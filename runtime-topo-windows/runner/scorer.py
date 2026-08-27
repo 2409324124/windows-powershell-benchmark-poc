@@ -598,13 +598,11 @@ def _infra(
     agent_records: list[dict] | None = None,
 ) -> dict:
     return {
-        'schema': 'wcb.score/v2',
+        'schema': 'wcb.score/v3',
         'run_id': run_dir.name,
         'task': task_id,
         'status': 'infrastructure_failure',
-        'classification': 'infrastructure_failure',
         'score': None,
-        'passed': None,
         'errors': errors,
         **_identity_fields(
             metadata, duration=duration, agent_records=agent_records,
@@ -766,15 +764,12 @@ def score_run(
 
     total = round(process['process_score'] + result['score'], 10)
     total = int(total) if total.is_integer() else total
-    classification = 'passed' if total == 100 else 'model_failure'
     return {
-        'schema': 'wcb.score/v2',
+        'schema': 'wcb.score/v3',
         'run_id': run_dir.name,
         'task': task_id,
-        'status': classification,
-        'classification': classification,
+        'status': 'valid',
         'score': total,
-        'passed': total == 100,
         **_identity_fields(
             metadata, duration=duration, agent_records=agent_records,
         ),
@@ -877,7 +872,7 @@ def score_root(
             merged[report['run_id']] = report
         report_runs = [merged[key] for key in sorted(merged)]
     write_json_atomic(output_root / 'score-report.json', {
-        'schema': 'wcb.score-report/v2',
+        'schema': 'wcb.score-report/v3',
         'runs': report_runs,
     })
     return reports

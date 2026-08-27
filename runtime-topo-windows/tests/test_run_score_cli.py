@@ -19,7 +19,7 @@ class ScoreCliTests(unittest.TestCase):
                 ]),
                 mock.patch('runner.run.score_root', return_value=[{
                     'run_id': 'opencode-ps001-example',
-                    'status': 'passed',
+                    'status': 'valid',
                 }]) as score_root,
                 mock.patch('builtins.print') as output_print,
             ):
@@ -83,7 +83,7 @@ class ScoreCliTests(unittest.TestCase):
                     '--run-id', run_id,
                 ]),
                 mock.patch('runner.run.score_root', return_value=[{
-                    'run_id': run_id, 'status': 'model_failure',
+                    'run_id': run_id, 'status': 'valid',
                 }]) as score_root,
                 mock.patch('builtins.print'),
             ):

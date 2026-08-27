@@ -22,7 +22,7 @@
 - Three-stream logging implementation is present: orchestrator, agent, evaluator JSONL.
 - Normal and timeout paths preserve captured OpenCode bytes in `opencode.stdout.jsonl` and `opencode.stderr.log`; `TimeoutExpired` partial output is no longer discarded.
 - Task setup removes stale output before every run, and overall PASS now requires both lifecycle PASS and evaluator PASS.
-- Runner, Process Judge, and Scorer are separate. The runner freezes the complete after-Agent workspace before evaluator execution; a hidden Windows OpenCode Go GPT Judge reviews the disposable copy and performs PowerShell replay; the local scorer combines that process review (50) with equally weighted machine checks (50). Per-run scores remain independent with no averaging or best-run selection.
+- Runner, Process Judge, and Scorer are separate. The runner freezes the complete after-Agent workspace before evaluator execution; a hidden Windows OpenCode Go GPT Judge reviews the disposable copy and performs PowerShell replay; the local scorer combines that process review (50) with equally weighted machine checks (50). Per-run scores remain independent ability measurements with no pass threshold, averaging, ranking, or best-run selection. Complete evidence is `valid`; damaged or contradictory evidence is `infrastructure_failure` with a null score.
 - The Judge disposable workspace grants the Medium desktop user modify access while keeping `.wcb-judge/evidence.json` read-only. Both workspace and evidence ACLs are verified by regression tests.
 - Shell/PowerShell/libvirt failure cases from the deployment are documented in `docs/shell-command-lessons.md`.
 
@@ -32,7 +32,7 @@
   - The Viewer was mapped, focused, and confirmed visible by the user before launch.
   - Agent exited `0`, did not time out, and produced complete v3 run evidence, including the after-Agent/before-evaluator workspace snapshot.
   - All eight transactional deployment evaluator checks passed for 50/50 machine-result points.
-  - Windows OpenCode Go Judge (`opencode-go/gpt-5.6-luna`, `low`) read the evidence and completed successful PowerShell replays, awarding 47/50 process points. The strict rule requires exactly 100, so the classification is `model_failure`, not infrastructure failure.
+  - Windows OpenCode Go Judge (`opencode-go/gpt-5.6-luna`, `low`) read the evidence and completed successful PowerShell replays, awarding 47/50 process points. The resulting 97/100 is a valid ability score, not a pass/fail classification.
   - The three deducted process points reflect missing explicit rooted-path replay, no induced filesystem swap failure, and slightly overbroad final claims.
   - Scheduled tasks, launcher/OpenCode processes, and guest staging were absent after cleanup. The validated user-state overlay and Viewer remain active for subsequent tests.
 - Earlier run `opencode-ps005-9f0eebac`: **INFRASTRUCTURE FAILURE / NULL SCORE**. Agent and evaluator completed, but the first v3 snapshot attempted to create its temporary ZIP below already-cleaned launcher staging. The ZIP now uses Windows `%TEMP%`; the failed attempt remains a separate run and is neither averaged nor selected away.
@@ -63,5 +63,5 @@
 
 ## Immediate next step
 
-Run the remaining task/model matrix from fresh run directories while keeping
-the validated desktop environment available for human-observed demonstrations.
+Publish the completed five-model by five-task matrix and keep the validated
+desktop environment available for targeted runtime regression canaries.

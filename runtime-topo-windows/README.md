@@ -70,19 +70,40 @@ python3 -m runner.run score \
 ```
 
 Each run receives an independent `score.json`. The root `score-report.json`
-lists runs without averaging, ranking, or selecting a best attempt. Version 2
+lists runs without averaging, ranking, or selecting a best attempt. Version 3
 assigns 50 points to the Windows OpenCode process review and 50 points to
-equally weighted machine evaluator checks. Only exactly 100 points is a pass.
-Valid but imperfect work is `model_failure`; missing or contradictory evidence
-produces a null score and `infrastructure_failure`.
+equally weighted machine evaluator checks. The numeric `0–100` score measures
+ability and has no global pass threshold: complete, internally consistent
+evidence is `valid` at any score. Missing or contradictory evidence produces a
+null score and `infrastructure_failure`.
 
 The validated visual run `opencode-ps005-dd2a25f6` used
 `opencode-go/deepseek-v4-flash` with variant `low`. The SPICE screenshots show
 the visible Agent window and its clean exit. All eight PS005 machine checks
 passed (50/50); the Windows OpenCode Go GPT Judge awarded 47/50 process points,
-for 97/100 overall. The Judge successfully read the structured evidence and
+for a 97/100 ability score. The Judge successfully read the structured evidence and
 replayed both evidence parsing and a clean transactional deployment under
 Windows PowerShell.
+
+## Resumable model matrix
+
+The checked-in `config/low-tier-5x5.yaml` expands PS001–PS005 across five
+models. Inspect the exact cells without starting a guest task:
+
+```bash
+python3 -m runner.run matrix \
+  --config benchmark.yaml \
+  --matrix config/low-tier-5x5.yaml \
+  --output /path/to/runs/low-tier-5x5 \
+  --dry-run
+```
+
+Replace `--dry-run` with `--visual` for a fresh matrix, or use
+`--visual --resume` to continue from a persisted safe phase. The controller
+runs environment gates, Agent, Process Judge, Scorer, and cleanup serially for
+each cell. A valid low score continues the matrix; only infrastructure failure
+stops it. `matrix-state.json`, `matrix-report.json`, and `score-report.json`
+retain every independent result without aggregation or ranking.
 
 The process Judge receives the complete frozen benchmark workspace, including
 files not declared as edit targets. It may send their contents to the configured

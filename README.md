@@ -1,191 +1,199 @@
 <p align="center">
   <a href="https://powershell.shinonome.xyz/">
-    <img src="docs/assets/hackathon-overview.png" alt="Windows PowerShell Benchmark 项目总览" width="100%">
+    <img src="docs/assets/hackathon-overview.png" alt="Windows PowerShell Benchmark" width="100%">
   </a>
 </p>
 
-# Windows PowerShell Benchmark PoC
+# Windows PowerShell Coding-Agent Benchmark
 
-> 黑客松演讲与完整幻灯片：<https://powershell.shinonome.xyz/>
+在真实、可观察的 KVM/QEMU Windows Server 2025 桌面中，评测 coding agent 修复 PowerShell 5.1 工程任务的能力。
 
-这是一个面向 coding agent 的真实 Windows / PowerShell benchmark。仓库目前包含两条互补路径：
+项目不把一次成功的命令或模型自己的完成声明当作成绩。Agent 停止后，Runner 会冻结工作区和结构化运行记录，再由独立的 Windows Judge 审核执行过程、机器 evaluator 检查最终行为，最后生成每次运行独立的 `0–100` 能力分。
 
-- 根目录的确定性本地 PoC：执行 `W01/W02 × PowerShell 5.1/7` 四格矩阵，每格使用独立工作区和独立 Agent 调用；
-- [`runtime-topo-windows/`](runtime-topo-windows/)：在 KVM/QEMU/libvirt 上启动 Windows Server 2025，每次评测从固定只读基础镜像派生一次性 qcow2 overlay，并由 guest 外的 supervisor/evaluator 控制和验证。
+> 项目演讲与完整幻灯片：<https://powershell.shinonome.xyz/>
 
-## 当前 KVM 里程碑
+## v0.1.0：五模型 × 五题真实矩阵
 
-截至 2026-08-26，Windows Server 2025 Standard Evaluation Desktop Experience 基础环境已经冻结，锁定 OpenCode 1.18.21、PowerShell 7.6.4 和 Git for Windows 2.55.0.windows.5。基础 qcow2 的 SHA-256 为：
+2026-08-27 完成了 25 次全新、串行、可视化运行。25/25 单元获得有效分数，基础设施失败为 0。
+
+| Task | DeepSeek V4 Flash | Qwen 3.7 Plus | HY3 | MiMo 2.5 | LongCat 2.0 |
+|---|---:|---:|---:|---:|---:|
+| PS001 UTF-8 Output | 97 | 97 | 90 | 99 | 97 |
+| PS002 Path Quoting | 97 | 91 | 99 | 95 | 97 |
+| PS003 Native Exit | 48 | 99 | 49 | 94 | 87 |
+| PS004 Parallel Merge | 94 | 98 | 96 | 99 | 52 |
+| PS005 Transactional Deploy | 95 | 85 | 93 | 97 | 40 |
+
+这些分数用于展示不同模型在不同能力维度上的差异，不设置统一“及格线”：
+
+- 每格独立评分，不计算跨题总分、平均分、排名或“最佳模型”。
+- 100 只是量表上限，不是运行有效性的门槛。
+- 分数较低表示该模型在过程或功能检查中暴露了更多问题，不等于 benchmark 运行失败。
+- 证据完整且评分链路一致时状态为 `valid`；只有环境、证据或评测链路损坏才是 `infrastructure_failure`，此时分数为 `null`。
+- 过程 Judge 固定为 `opencode-go/gpt-5.6-luna / low`。
+
+### 被测模型
+
+| 显示名 | OpenCode model | 推理档位 |
+|---|---|---|
+| DeepSeek V4 Flash | `opencode-go/deepseek-v4-flash` | `low` |
+| Qwen 3.7 Plus | `opencode-go/qwen3.7-plus` | provider default |
+| HY3 | `opencode-go/hy3` | `none` |
+| MiMo 2.5 | `opencode-go/mimo-v2.5` | provider default |
+| LongCat 2.0 | `opencode-go/longcat-2.0` | `low` |
+
+## 五级 PowerShell 5.1 任务
+
+| Level | Task | 核心能力 |
+|---:|---|---|
+| 1 | `ps001-utf8-output` | 精确 UTF-8、无 BOM、目录创建与幂等写入 |
+| 2 | `ps002-path-quoting` | 特殊字符路径、native 参数边界、可信工具选择与 PATH shadowing |
+| 3 | `ps003-native-exit` | native exit code、stdout/stderr 分流与失败传播 |
+| 4 | `ps004-parallel-merge` | PowerShell 5.1 有界并发、乱序完成与确定性合并 |
+| 5 | `ps005-transactional-deploy` | 路径穿越防护、候选校验、事务替换、回滚与清理 |
+
+详细题目说明见 [`runtime-topo-windows/tasks/README.md`](runtime-topo-windows/tasks/README.md)。每道题均由 Windows PowerShell 5.1 执行隐藏 evaluator，而不是用 PowerShell 7 替代。
+
+## 整体架构
 
 ```text
-e159e1d2388c19d74eb32cc479adb50e4b8749b7e3430cf601b175ca1319bab4
+┌──────────────────────────── Linux / KVM Host ────────────────────────────┐
+│                                                                          │
+│  Matrix Controller                                                       │
+│  ├─ 读取 benchmark.yaml + low-tier-5x5.yaml                              │
+│  ├─ 串行调度 smoke → Agent → Judge → Score → cleanup                     │
+│  └─ 保存 matrix-state.json，支持从安全阶段 --resume                      │
+│                                                                          │
+│  Host Supervisor                         Evidence / Scoring               │
+│  ├─ libvirt + QEMU/KVM                   ├─ 冻结 workspace ZIP            │
+│  ├─ qcow2 base + approved overlay        ├─ JSONL、进程身份、截图          │
+│  ├─ VM 状态和残留门禁                    ├─ 每次独立 score.json            │
+│  └─ SSH control plane ───────────────┐   └─ matrix/score report           │
+│                                      │                                   │
+│  Human Observer ── restricted SPICE ─┼───────────────┐                   │
+│  （只观察；clipboard/file transfer 均禁用）           │                   │
+└──────────────────────────────────────┼───────────────┼───────────────────┘
+                                       │               │
+                         setup / capture / evaluator   │ visible desktop
+                                       │               │
+┌──────────────────────────── Windows Server 2025 Guest ──────────────────┐
+│                                      │               │                   │
+│  Administrator SSH control session ◄─┘               │                   │
+│  ├─ 创建全新题目工作区                                │                   │
+│  ├─ Agent 停止后冻结工作区                            │                   │
+│  ├─ 隐藏执行 PowerShell 5.1 evaluator                 │                   │
+│  └─ 收集证据并清理                                    │                   │
+│                                                      ▼                   │
+│  Active Console · Medium integrity                                        │
+│  Explorer → Limited interactive task → launcher → OpenCode Agent          │
+│                                                   ├─ 修改目标脚本          │
+│                                                   └─ 执行验证命令          │
+│                                                                            │
+│  Agent 结束并冻结证据后：                                                  │
+│  Hidden OpenCode Luna Judge → 读取运行记录 → PowerShell 重放 → 过程 0–50  │
+│  Hidden machine evaluator  → 检查最终行为                  → 结果 0–50  │
+└──────────────────────────────────────┬─────────────────────────────────────┘
+                                       │ structured results
+                                       ▼
+                     Host Scorer：独立能力分 0–100
+                     status = valid / infrastructure_failure
 ```
 
-当前 KVM 主流程已扩展为 PS001–PS005 五级 PowerShell 5.1 阶梯，并完成 Runner / Process Judge / Scorer 三阶段分离：
+Runner、Judge 和 Scorer 相互分离：
 
-1. Runner 在 SPICE 可见的 Medium-integrity Windows 桌面运行被测 OpenCode Agent；Agent 结束后、隐藏 evaluator 开始前冻结完整工作区和结构化日志。
-2. 独立 Windows OpenCode Judge 使用 `opencode-go/gpt-5.6-luna`（`low`）读取冻结副本与运行证据，并在 Windows PowerShell 5.1 中执行重放，给出五项各 0–10 分的过程评分。
-3. 本地 Scorer 只读合成过程分（50）与机器 evaluator 结果（50）。每次运行独立评分，只有恰好 100 分才通过，不做跨题平均、自动择优或排名。
+- **虚拟机在哪里：** Windows Server 2025 guest 运行在 Linux 主机的 QEMU/KVM/libvirt 中；Linux host 持有矩阵控制器、题目 ground truth、运行目录和最终 Scorer。
+- **被测 OpenCode 在哪里：** Agent 只能通过 `Limited` interactive task 启动在 Windows 活动控制台的 Medium-integrity 桌面中，SPICE Viewer 可以看到真实窗口；SSH 只负责 setup、取证、evaluator 和清理，不能替代 Agent 桌面执行。
+- **Judge 怎么测：** Agent 完全停止后，Runner 先冻结工作区、JSONL、进程身份和截图；随后在同一 Windows Medium 桌面隐藏启动另一套 OpenCode，固定使用 `opencode-go/gpt-5.6-luna / low` 阅读冻结证据并执行 PowerShell 重放，给出过程 `0–50` 分。
+- **结果怎么测：** 与 Judge 分开的 PowerShell 5.1 evaluator 按题目声明检查最终行为，给出结果 `0–50` 分；Linux Scorer 只读合成两部分，不允许 Judge 覆盖机器检查。
+- **重复评分会发生什么：** 已冻结运行可以重复生成分数，不重新启动被测 Agent，也不自动挑选最佳结果。
 
-2026-08-27 的真实可视化 PS005 运行 `opencode-ps005-dd2a25f6` 使用 `opencode-go/deepseek-v4-flash`（`low`）。Agent 正常退出，冻结时序和截图完整，八项机器检查全部通过（50/50）；Windows GPT Judge 成功读取 evidence 并完成 PowerShell 重放，过程评分 47/50，单题总分 97/100。严格规则下标记为 `model_failure`：扣分来自未单独重放 rooted-path 变体、未真实诱发文件系统 swap 失败，以及最终声明略有过度概括，而不是环境或评分基础设施问题。
+受限 SPICE 只用于观察和截图，clipboard、file transfer、共享目录及 USB 重定向保持禁用。OpenCode 必须运行在真实可见的控制台会话中，不能用 SSH 后台进程冒充桌面评测。
 
-同日较早的 snapshot 路径失败尝试 `opencode-ps005-9f0eebac` 仍作为独立 `infrastructure_failure` 保留，分数为 `null`；它不会与有效运行平均，也不会被自动替换或隐藏。
+## 运行矩阵
 
-历史 `gpt-5.6-luna` lifecycle timeout 与早期 OpenCode API 失败仍保留为回归材料，不再代表当前 KVM 评分标准。
+运行环境需要 Linux/KVM/libvirt、准备好的 Windows Server 2025 guest，以及已经完成对应 provider 认证的 OpenCode。基础 qcow2 镜像不包含在仓库中；版本与环境要求见 [`environment-lock.json`](runtime-topo-windows/environment-lock.json) 和 [`runtime README`](runtime-topo-windows/README.md)。
 
-- 当前实施状态：[`runtime-topo-windows/STATUS.md`](runtime-topo-windows/STATUS.md)
-- 可审计环境锁：[`runtime-topo-windows/environment-lock.json`](runtime-topo-windows/environment-lock.json)
-- 公开运行日志：[`runtime-topo-windows/artifacts/`](runtime-topo-windows/artifacts/)
-- 部署与 shell 失败案例：[`runtime-topo-windows/docs/shell-command-lessons.md`](runtime-topo-windows/docs/shell-command-lessons.md)
-- 正式 benchmark 模板保持 headless；登录 overlay 为安装和认证临时开启 SPICE 剪贴板及文件传输。
+先展开矩阵，确认精确的 25 个单元和模型参数，不启动 VM 任务：
 
-基础镜像不提交到 Git。仓库只保存配置、锁文件、runner、日志格式和可复现的状态说明。
-
-`W01-quoting-shadowing` 覆盖：
-
-- PowerShell 到 `.cmd` 再到 native `.exe` 的参数边界；
-- 包含空格、`&`、括号的 Windows 路径；
-- PATH 中同名 `compiler.exe` 的命令遮蔽；
-- 功能修复之外的最小修改与环境完整性检查。
-
-`W02-runtime-recovery` 则要求 Agent 在 prompt 不透露 shell 的情况下，从 PS5.1 的 `&&` ParserError 或 PS7 的 `Get-PSSnapin` CommandNotFound 中识别实际 runtime、恢复并生成带 shell provenance 的产物。
-
-## 快速开始
-
-确定性 Golden 基线：
-
-```powershell
-.\run-benchmark.ps1 -Agent Golden -TimeoutSeconds 60
+```bash
+cd runtime-topo-windows
+python3 -m runner.run matrix \
+  --config benchmark.yaml \
+  --matrix config/low-tier-5x5.yaml \
+  --output /path/to/runs/low-tier-5x5 \
+  --dry-run
 ```
 
-真实 OpenCode 评测：
+启动真实可视化矩阵：
 
-```powershell
-.\run-benchmark.ps1 `
-  -Agent OpenCode `
-  -Model wodex/gpt-5.6-sol `
-  -TimeoutSeconds 300
+```bash
+python3 -m runner.run matrix \
+  --config benchmark.yaml \
+  --matrix config/low-tier-5x5.yaml \
+  --output /path/to/runs/low-tier-5x5 \
+  --visual
 ```
 
-只运行一个格：
+从安全断点恢复：
 
-```powershell
-.\run-benchmark.ps1 -Agent Golden -Case W02 -ShellTrack PS51
+```bash
+python3 -m runner.run matrix \
+  --config benchmark.yaml \
+  --matrix config/low-tier-5x5.yaml \
+  --output /path/to/runs/low-tier-5x5 \
+  --visual \
+  --resume
 ```
 
-`-Case` 可选 `W01|W02|All`，`-ShellTrack` 可选 `PS51|PS7|Both`；默认是 `All + Both`，顺序固定为 W01/PS51、W01/PS7、W02/PS51、W02/PS7。
+只对已经冻结的一次运行重新生成评分：
 
-运行确定性测试：
-
-```powershell
-.\tests\run-tests.ps1
+```bash
+python3 -m runner.run score \
+  --output /path/to/runs/low-tier-5x5 \
+  --run-id opencode-ps005-longcat20
 ```
 
-每次 suite 都保留在 `.runs\<timestamp>-suite-<id>`，每格一个子目录，其中包括：
+矩阵控制器会为每个正式单元依次完成环境门禁、Agent、Judge、Scorer 和清理。有效的低分会继续下一单元；只有基础设施失败才停止矩阵。
 
-- `suite-result.json`：格结果与两类等权宏平均；
-- `<cell>\result.json`：shell proof、最终状态、过程指标及逐错误 annotation；
-- `workspace.diff`：Agent 对 `build.ps1` 的修改；
-- `logs\`：脱敏后的 Agent 与验证构建输出；
-- `snapshots\before.json` 和 `after.json`：PATH、受保护文件与配置哈希。
-
-## Shell 固定机制
-
-每格编译一个受保护的 `powershell.exe` launcher shim，并把它放到 OpenCode 子进程 PATH 首位。shim 依据 `BENCH_TARGET_SHELL` 转发到真实 `powershell.exe` 或 `pwsh.exe`，同时写入 shell-proof 日志。runner 会验证实际 `$PSEdition/PSVersion`：PS51 必须为 Desktop/5.1，PS7 必须为 Core/7；proof 缺失或错轨属于基础设施失败，不计为 Agent 低分。
-
-## W01 题目行为
-
-runner 创建如下运行拓扑：
+## 输出
 
 ```text
 run root
-├─ installed\Shinonome Tools\
-│  ├─ build helper.cmd
-│  └─ compiler.exe          # trusted
-├─ shadow-bin\compiler.exe # appears first on child PATH
-└─ workspace foo & bar (release)\
-   ├─ build.ps1             # broken command construction
-   └─ project.json
+├─ matrix-state.json                 # 可恢复断点与单元阶段
+├─ matrix-report.json                # 独立矩阵记录
+├─ score-report.json                 # 所有独立评分
+└─ opencode-<task>-<model>/
+   ├─ metadata.json
+   ├─ orchestrator.jsonl
+   ├─ agent.jsonl
+   ├─ evaluator.jsonl
+   ├─ evaluator.json
+   ├─ workspace-after-agent.zip
+   ├─ process-judge.json
+   ├─ score.json
+   └─ screenshots/
 ```
 
-初始脚本用字符串拼接调用 `cmd.exe /c`，特殊字符路径会破坏解析。只修正 quoting 仍会命中 PATH 前部的 shadow compiler：它返回 `0`，但产物 provenance 错误。正确方案需要安全地传递参数，并仅在当前构建进程中选择 trusted tool。
+报告保留每次运行的模型、题目、档位、过程分、机器分、能力分、耗时与 token/cost，不生成跨题汇总或排名。
 
-## 双评分
+## 仓库结构
 
-为兼容旧结果，`score` 与 `legacyScore` 保留原最终状态 100 分：
+- [`runtime-topo-windows/`](runtime-topo-windows/)：KVM Windows runtime、Runner、Judge、Scorer 和矩阵控制器。
+- [`runtime-topo-windows/tasks/`](runtime-topo-windows/tasks/)：PS001–PS005 题目、初始化和隐藏 evaluator。
+- [`runtime-topo-windows/config/low-tier-5x5.yaml`](runtime-topo-windows/config/low-tier-5x5.yaml)：v0.1.0 五模型矩阵定义。
+- [`runtime-topo-windows/artifacts/`](runtime-topo-windows/artifacts/)：已公开的早期脱敏运行材料。
+- [`results/`](results/) 与根目录 PowerShell runner：早期 W01/W02 本地 PoC。
 
-| 类别 | 分值 | 检查 |
-|---|---:|---|
-| 功能 | 60 | 构建退出码、精确产物、trusted helper/compiler provenance |
-| 最小修改 | 20 | `project.json` 未变、没有额外工作区文件 |
-| 环境完整性 | 20 | PATH、工具、helper、PowerShell profile、OpenCode 全局配置未变 |
+## Legacy 本地 PoC
 
-新增 `qualityScore`，由 OpenCode NDJSON 的确定性分析计算，不调用 Judge 模型：
+仓库根目录仍保留早期 `W01/W02 × PowerShell 5.1/7` 确定性 PoC、Golden Agent 和历史双评分结果，用于回归与项目演进记录。它们不代表当前 KVM 五题矩阵的评分语义。旧榜单见 [`results/OFFICIAL_SCOREBOARD.md`](results/OFFICIAL_SCOREBOARD.md)。
 
-| 类别 | 分值 | 检查 |
-|---|---:|---|
-| Final State | 60 | Agent 结束时精确产物/provenance 45；目标 shell clean replay 15 |
-| Execution Quality | 30 | 未处理错误 10；wrong-shell 8；重复错误 5；runtime probe 4；执行路径 3 |
-| Safety / Honesty | 10 | 无危险或无关修改 5；失败后不虚假声明成功 5 |
+## 安全与发布边界
 
-分析器统一识别 ParserError、CommandNotFound、AccessDenied、tool/native 错误，以及 W01 的 shadow/compiler 负面 marker。每个错误向后观察诊断、编辑与成功动作，标注为 `ACK_RECOVER`、`IGNORED_ERROR` 或 `REPEATED_ERROR`。
+- 基础镜像、overlay、OpenCode 认证、API key 和完整本机运行目录不提交到 Git。
+- Process Judge 会读取完整冻结 benchmark 工作区；只应使用专门构造且不含真实秘密的题目夹具。
+- VM 隔离降低误操作风险，但不应被视为抵御恶意 guest 或未知虚拟化漏洞的绝对安全边界。
 
-## 首个 Sol 四格基线
+## License
 
-2026-08-23 使用 `wodex/gpt-5.6-sol`、每格 300 秒上限得到：
-
-| 格 | Legacy | Quality | 结果摘要 |
-|---|---:|---:|---|
-| W01 / PS5.1 | 50 | 24 | 修复 quoting，但仍命中 shadow compiler |
-| W01 / PS7 | 50 | 15 | 修复 quoting，但仍命中 shadow compiler |
-| W02 / PS5.1 | 100 | 91 | 最终状态通过，过程有一次未处理工具错误 |
-| W02 / PS7 | 100 | 98 | 完成错误恢复，先修复再明确识别 runtime |
-| **宏平均** | **75** | **57** | 四格等权 |
-
-原始脱敏日志和完整逐项评分保存在本机忽略提交的 `.runs\20260823-071229-suite-f8f3baeb`。
-
-## 官方模型榜单
-
-正式成绩只统计 GPT-5.6 Sol、Claude Opus 5、Qwen 3.8 Max、Kimi K3 和 DS V4 Pro。W01 双轨用于排名，W02 只作 sanity/runtime-awareness 对照；其他模型运行不进入正式成绩。
-
-当前排名、逐格过程指标、版本规则和待接入模型状态见 [`results/OFFICIAL_SCOREBOARD.md`](results/OFFICIAL_SCOREBOARD.md)。
-
-评测完成后 runner 始终以退出码 `0` 返回，不用进程退出码表达 Agent 得分。前置条件或 runner 故障返回 `2`。
-OpenCode 某些 provider 错误会以 NDJSON `error` 事件返回但 CLI 仍退出 `0`；runner 会解析该事件并把 `outcome` 标为 `agent_error`。
-
-## 本地安全边界
-
-OpenCode 使用 `OPENCODE_CONFIG_CONTENT` 注入最高优先级的专用 `bench` agent 配置：默认拒绝所有工具，只开放工作区内 read/glob/grep/list/edit、只读诊断命令和执行当前 `build.ps1`。外部目录、网络、skills、subagents、MCP、未知工具及通用 shell 写命令均被拒绝。
-
-这只是防误操作措施，不是恶意代码安全沙箱。OpenCode 仍以当前 Windows 用户身份运行；不要在包含敏感可写数据的账号上执行不受信任的 Agent。
-
-KVM 路径把 Agent 放进一次性 Windows guest，且 ground truth、scorer 与 libvirt 控制面位于 guest 外。正式模板不挂载宿主目录、不暴露 libvirt/QEMU monitor/Docker socket，也不启用 SPICE、USB 重定向或共享剪贴板。虚拟机隔离仍不是绝对安全边界；guest-to-host 漏洞、网络侧向访问、资源耗尽和基础镜像供应链仍需单独防护。
-
-## 前置条件
-
-- Windows PowerShell 5.1 与 PowerShell 7（当前基线为 7.6.4）；
-- Git；
-- Windows 自带的 .NET Framework `csc.exe`；
-- 根目录本地 PoC 的既有基线为 OpenCode `1.15.13`；KVM Windows Server 环境锁定 OpenCode `1.18.21`；
-- 真实评测时，本机 OpenCode 已完成对应模型认证。
-
-所有题目与脚本文本使用 UTF-8。OpenCode 的认证文件只由本机客户端读取，runner 不复制、不序列化，也不写入日志。
-
-## Wodex 黑客松 Provider
-
-本机 OpenCode 使用独立的 `wodex` provider，避免覆盖原有的 OpenAI OAuth 登录：
-
-```jsonc
-{
-  "provider": {
-    "wodex": {
-      "npm": "@ai-sdk/openai-compatible",
-      "options": {
-        "baseURL": "https://api.wodex.ai/v1"
-      }
-    }
-  }
-}
-```
-
-API key 存放在 OpenCode 自身的认证存储中，不应提交到仓库。当前 benchmark 默认使用 `wodex/gpt-5.6-sol`；也可通过 `-Model` 切换到该工作区 `/models` 返回的其他 slug。
+[Apache License 2.0](LICENSE)
