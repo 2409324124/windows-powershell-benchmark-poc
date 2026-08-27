@@ -58,56 +58,66 @@
 
 ## 整体架构
 
-```text
-┌──────────────────────────── Linux / KVM Host ────────────────────────────┐
-│                                                                          │
-│  Matrix Controller                                                       │
-│  ├─ 读取 benchmark.yaml + low-tier-5x5.yaml                              │
-│  ├─ 串行调度 smoke → Agent → Judge → Score → cleanup                     │
-│  └─ 保存 matrix-state.json，支持从安全阶段 --resume                      │
-│                                                                          │
-│  Host Supervisor                         Evidence / Scoring               │
-│  ├─ libvirt + QEMU/KVM                   ├─ 冻结 workspace ZIP            │
-│  ├─ qcow2 base + approved overlay        ├─ JSONL、进程身份、截图          │
-│  ├─ VM 状态和残留门禁                    ├─ 每次独立 score.json            │
-│  └─ SSH control plane ───────────────┐   └─ matrix/score report           │
-│                                      │                                   │
-│  Human Observer ── restricted SPICE ─┼───────────────┐                   │
-│  （只观察；clipboard/file transfer 均禁用）           │                   │
-└──────────────────────────────────────┼───────────────┼───────────────────┘
-                                       │               │
-                         setup / capture / evaluator   │ visible desktop
-                                       │               │
-┌──────────────────────────── Windows Server 2025 Guest ──────────────────┐
-│                                      │               │                   │
-│  Administrator SSH control session ◄─┘               │                   │
-│  ├─ 创建全新题目工作区                                │                   │
-│  ├─ Agent 停止后冻结工作区                            │                   │
-│  ├─ 隐藏执行 PowerShell 5.1 evaluator                 │                   │
-│  └─ 收集证据并清理                                    │                   │
-│                                                      ▼                   │
-│  Active Console · Medium integrity                                        │
-│  Explorer → Limited interactive task → launcher → OpenCode Agent          │
-│                                                   ├─ 修改目标脚本          │
-│                                                   └─ 执行验证命令          │
-│                                                                            │
-│  Agent 结束并冻结证据后：                                                  │
-│  Hidden OpenCode Luna Judge → 读取运行记录 → PowerShell 重放 → 过程 0–50  │
-│  Hidden machine evaluator  → 检查最终行为                  → 结果 0–50  │
-└──────────────────────────────────────┬─────────────────────────────────────┘
-                                       │ structured results
-                                       ▼
-                     Host Scorer：独立能力分 0–100
-                     status = valid / infrastructure_failure
+```mermaid
+flowchart TB
+  subgraph HOST["Linux / KVM Host"]
+    direction LR
+    MATRIX["Matrix Controller<br/>config · schedule · resume"]
+    KVM["QEMU/KVM + libvirt<br/>qcow2 · SPICE · VM gates"]
+    OBSERVER["Human Observer<br/>view only"]
+    EVIDENCE[("Run Evidence<br/>ZIP · JSONL · identity · screenshots")]
+    SCORER["Host Scorer<br/>process 0–50 + result 0–50"]
+    REPORTS[("Per-run score + reports<br/>valid / infrastructure_failure")]
+  end
+
+  subgraph GUEST["Windows Server 2025 Guest VM"]
+    direction TB
+    CONTROL["Administrator SSH Control<br/>setup · capture · cleanup"]
+
+    subgraph DESKTOP["Active Console · Medium Integrity"]
+      direction LR
+      AGENT["OpenCode Agent<br/>model under test"]
+      JUDGE["Hidden OpenCode Judge<br/>GPT-5.6 Luna / low"]
+    end
+
+    WORKSPACE["Task Workspace<br/>state after Agent exit"]
+    EVALUATOR["PowerShell 5.1 Evaluator<br/>machine behavior checks"]
+  end
+
+  subgraph PROVIDER["External Model Provider"]
+    direction LR
+    TESTED["Models under test<br/>DeepSeek · Qwen · HY3 · MiMo · LongCat"]
+    LUNA["Judge model<br/>GPT-5.6 Luna / low"]
+  end
+
+  MATRIX -->|"domain + overlay gates"| KVM
+  MATRIX -->|"SSH control"| CONTROL
+  KVM -->|"runs guest"| CONTROL
+  KVM -->|"framebuffer screenshots"| EVIDENCE
+  OBSERVER -.->|"restricted SPICE view"| AGENT
+  CONTROL -->|"start Limited interactive task"| AGENT
+  CONTROL -->|"collect logs + identity"| EVIDENCE
+  AGENT <-->|"request / response"| TESTED
+  AGENT -->|"modify + verify"| WORKSPACE
+  WORKSPACE -->|"freeze ZIP after exit"| EVIDENCE
+  EVIDENCE -->|"stage disposable copy + runtime"| JUDGE
+  JUDGE <-->|"request / response"| LUNA
+  JUDGE -->|"PowerShell replay + process score"| EVIDENCE
+  WORKSPACE -->|"hidden checks after snapshot"| EVALUATOR
+  CONTROL -->|"launch evaluator"| EVALUATOR
+  EVALUATOR -->|"result score"| EVIDENCE
+  EVIDENCE --> SCORER --> REPORTS
 ```
 
-Runner、Judge 和 Scorer 相互分离：
+| 组件 | 运行位置 | 职责 |
+|---|---|---|
+| Matrix Controller / Scorer | Linux host | 调度 VM、保存证据、组合两个 50 分项并生成报告 |
+| OpenCode Agent | Windows 可视 Medium 桌面 | 调用外部被测模型，修改脚本并执行验证 |
+| OpenCode Judge | Agent 退出后的同一 Windows Medium 桌面 | 独立调用 Luna，阅读 Host 回传的冻结副本、执行 PowerShell 重放并给出过程分 |
+| Machine Evaluator | Windows guest 的隐藏 PowerShell 5.1 进程 | 检查最终功能行为并给出结果分 |
+| SPICE Viewer | Linux host | benchmark 只用于观察；clipboard 和 file transfer 禁用，不使用键盘鼠标干预 |
 
-- **虚拟机在哪里：** Windows Server 2025 guest 运行在 Linux 主机的 QEMU/KVM/libvirt 中；Linux host 持有矩阵控制器、题目 ground truth、运行目录和最终 Scorer。
-- **被测 OpenCode 在哪里：** Agent 只能通过 `Limited` interactive task 启动在 Windows 活动控制台的 Medium-integrity 桌面中，SPICE Viewer 可以看到真实窗口；SSH 只负责 setup、取证、evaluator 和清理，不能替代 Agent 桌面执行。
-- **Judge 怎么测：** Agent 完全停止后，Runner 先冻结工作区、JSONL、进程身份和截图；随后在同一 Windows Medium 桌面隐藏启动另一套 OpenCode，固定使用 `opencode-go/gpt-5.6-luna / low` 阅读冻结证据并执行 PowerShell 重放，给出过程 `0–50` 分。
-- **结果怎么测：** 与 Judge 分开的 PowerShell 5.1 evaluator 按题目声明检查最终行为，给出结果 `0–50` 分；Linux Scorer 只读合成两部分，不允许 Judge 覆盖机器检查。
-- **重复评分会发生什么：** 已冻结运行可以重复生成分数，不重新启动被测 Agent，也不自动挑选最佳结果。
+Judge 与被测 Agent 是两个不同的 Windows OpenCode 进程，实际模型推理由外部 provider 完成。Judge 只能在 Agent 完全退出、工作区已经回收到 Host 并冻结后启动；Linux Scorer 不调用模型，也不允许 Judge 修改机器 evaluator 的结果。
 
 受限 SPICE 只用于观察和截图，clipboard、file transfer、共享目录及 USB 重定向保持禁用。OpenCode 必须运行在真实可见的控制台会话中，不能用 SSH 后台进程冒充桌面评测。
 
