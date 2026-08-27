@@ -6,6 +6,7 @@ RUN apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 update \
     && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 install -y --no-install-recommends /tmp/powershell.deb openssh-server ca-certificates \
     && rm -f /tmp/powershell.deb \
     && useradd --create-home --shell /bin/bash wcb-task \
+    && passwd -d wcb-task \
     && mkdir -p /run/sshd /etc/ssh/keys /opt/wcb/tools \
     && rm -rf /var/lib/apt/lists/*
 
