@@ -520,6 +520,7 @@ def judge_run(
     envelope = {
         'schema': 'wcb.process-judge-cache/v2',
         'run_id': run_id,
+        'evaluator_source': _evaluator_source(run_dir),
         'judge': {
             'runtime': 'windows-opencode',
             'model': judge['model'],
@@ -529,6 +530,17 @@ def judge_run(
     }
     write_json_atomic(run_dir / 'process-judge.json', envelope)
     return envelope
+
+
+def _evaluator_source(run_dir: Path) -> dict:
+    replay_path = run_dir / 'evaluator-replay.json'
+    if not replay_path.is_file():
+        return {'kind': 'original'}
+    replay = _read_json(replay_path)
+    captured_at = replay.get('captured_at')
+    if not isinstance(captured_at, str) or not captured_at:
+        raise ProcessJudgeError('evaluator replay has no captured_at')
+    return {'kind': 'replay', 'captured_at': captured_at}
 
 
 def judge_root(
@@ -587,6 +599,8 @@ def judge_root(
             metadata = _read_json(run_dir / 'metadata.json')
             if task_id is not None and metadata.get('task') != task_id:
                 continue
+            evaluator_source = _evaluator_source(run_dir)
+            stale_cache = False
             cache = run_dir / 'process-judge.json'
             if cache.exists():
                 value = _read_json(cache)
@@ -604,21 +618,34 @@ def judge_root(
                         'existing process-judge.json is not from the configured '
                         'Windows OpenCode Judge'
                     )
-                (run_dir / 'process-judge-error.json').unlink(missing_ok=True)
-                reports.append({
-                    'run_id': run_dir.name,
-                    'task': metadata.get('task'),
-                    'status': 'cached',
-                    'schema': value.get('schema'),
-                })
-                continue
+                stale_cache = (
+                    evaluator_source['kind'] == 'replay'
+                    and value.get('evaluator_source') != evaluator_source
+                )
+                if not stale_cache:
+                    (run_dir / 'process-judge-error.json').unlink(missing_ok=True)
+                    reports.append({
+                        'run_id': run_dir.name,
+                        'task': metadata.get('task'),
+                        'status': 'cached',
+                        'schema': value.get('schema'),
+                    })
+                    continue
             raw_output = run_dir / 'process-judge.stdout.jsonl'
-            if raw_output.exists():
+            error_output = run_dir / 'process-judge-error.json'
+            if (
+                raw_output.is_file()
+                and raw_output.stat().st_size > 0
+                and not error_output.is_file()
+                and not stale_cache
+                and evaluator_source['kind'] != 'replay'
+            ):
                 judged, replay = _parse_opencode_output(raw_output.read_bytes())
                 judged['windows_replay'] = replay
                 envelope = {
                     'schema': 'wcb.process-judge-cache/v2',
                     'run_id': run_dir.name,
+                    'evaluator_source': evaluator_source,
                     'judge': {
                         'runtime': 'windows-opencode',
                         'model': judge['model'],
@@ -627,7 +654,7 @@ def judge_root(
                     'result': judged,
                 }
                 write_json_atomic(cache, envelope)
-                (run_dir / 'process-judge-error.json').unlink(missing_ok=True)
+                error_output.unlink(missing_ok=True)
                 reports.append({
                     'run_id': run_dir.name,
                     'task': metadata.get('task'),

@@ -67,6 +67,42 @@ try {
     # The title helps human observation but is not benchmark correctness.
 }
 
+try {
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class WcbConsoleWindow {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowPos(
+        IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy,
+        uint uFlags
+    );
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+}
+'@
+    $ConsoleWindow = [WcbConsoleWindow]::GetConsoleWindow()
+    if ($ConsoleWindow -ne [IntPtr]::Zero) {
+        [void][WcbConsoleWindow]::ShowWindow($ConsoleWindow, 9)
+        [void][WcbConsoleWindow]::SetWindowPos(
+            $ConsoleWindow, [IntPtr](-1), 0, 0, 0, 0, 0x0003
+        )
+        [void][WcbConsoleWindow]::SetWindowPos(
+            $ConsoleWindow, [IntPtr](-2), 0, 0, 0, 0, 0x0003
+        )
+        [void][WcbConsoleWindow]::SetForegroundWindow($ConsoleWindow)
+    }
+} catch {
+    # Foreground activation is best-effort and must not change benchmark behavior.
+}
+
 [IO.File]::WriteAllBytes($StdoutPath, [byte[]]@())
 [IO.File]::WriteAllBytes($StderrPath, [byte[]]@())
 [IO.File]::WriteAllBytes($AuthStdoutPath, [byte[]]@())
@@ -86,6 +122,13 @@ foreach ($Property in @($Request.environment.PSObject.Properties)) {
         [string]$Property.Value,
         [EnvironmentVariableTarget]::Process
     )
+}
+if ($env:WCB_SSH_CLIENT_DIR) {
+    $SshClient = Join-Path $env:WCB_SSH_CLIENT_DIR 'ssh.exe'
+    if (-not (Test-Path -LiteralPath $SshClient -PathType Leaf)) {
+        throw "configured Windows SSH client is missing: $SshClient"
+    }
+    $env:Path = $env:WCB_SSH_CLIENT_DIR + ';' + $env:Path
 }
 & $Request.executable auth list 1> $AuthStdoutPath 2> $AuthStderrPath
 $AuthExitCode = $LASTEXITCODE

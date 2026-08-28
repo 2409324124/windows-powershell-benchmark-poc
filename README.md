@@ -12,9 +12,49 @@
 
 > 项目演讲与完整幻灯片：<https://powershell.shinonome.xyz/>
 
-## v0.1.0：五模型 × 五题真实矩阵
+## 当前实测：PowerShell 7 高难度五模型 × 五题矩阵
 
-2026-08-27 完成了 25 次全新、串行、可视化运行。25/25 单元获得有效分数，基础设施失败为 0。
+2026-08-28 在 `codex/runner-scorer-v2` 工作分支完成了 PS006–PS010 的 25 次全新、串行、可视化运行。25/25 单元均得到有效数值分，基础设施失败为 0；本轮成绩覆盖 `18.33–100.00`，题目能够明显区分模型在不同工程能力上的表现。
+
+| Task | DeepSeek V4 Flash | Qwen 3.7 Plus | HY3 | MiMo 2.5 | LongCat 2.0 |
+|---|---:|---:|---:|---:|---:|
+| PS006 Dual-engine Pipeline | 99.00 | 98.00 | 100.00 | 99.00 | 18.67 |
+| PS007 Parallel Runspace Fan-out | 92.86 | 78.71 | 58.71 | 34.43 | 30.43 |
+| PS008 SSH Remoting Sync | 84.67 | 82.67 | 96.00 | 55.33 | 18.33 |
+| PS009 Native Byte Pipeline | 96.00 | 84.67 | 63.67 | 81.33 | 48.33 |
+| PS010 Cross-platform Manifest | 53.43 | 61.71 | 99.00 | 62.71 | 32.43 |
+
+每格都是一次独立运行的 `0–100` 能力分，不计算跨题总分、平均分、排名或“最佳模型”。低分表示模型在执行过程或机器功能检查中暴露了更多问题，不代表评测链路失败；只有证据、环境或评分链路损坏时才记录 `infrastructure_failure` 和 `score: null`。
+
+其中 6 个单元达到 600 秒 Agent 时限后仍留下了可冻结、可评测的有效结果：PS006 LongCat，PS007 MiMo/LongCat，PS008 LongCat，PS009 LongCat，PS010 LongCat。它们的分数被保留为模型在固定资源边界下的真实表现，不做自动重跑或择优。
+
+### 题目与能力类型
+
+| Level | Task | 题目类型 | 运行时 | 主要考点 |
+|---:|---|---|---|---|
+| 6 | `ps006-dual-engine-pipeline` | 双引擎兼容与确定性序列化 | Windows PowerShell 5.1 + PowerShell 7.6.4 | 对象管道、JSONL 异常处理、ordinal 排序、UTF-8 无 BOM、跨引擎逐字节一致与幂等 |
+| 7 | `ps007-parallel-runspace-fanout` | 并行编排与故障传播 | Windows PowerShell 7.6.4 | `ForEach-Object -Parallel`、ThrottleLimit 4、`$using:`、真实并发、native 退出码 23、失败时停止发布 |
+| 8 | `ps008-ssh-remoting-sync` | SSH Remoting 与远端同步 | Windows PowerShell 7.6.4 → 隔离 Linux PowerShell 7.6.4 容器 | `PSSession`、远端命令与文件往返、固定 host key、退出码 37、会话和远端残留清理 |
+| 9 | `ps009-native-byte-pipeline` | 原生二进制管道与原子发布 | Windows PowerShell 7.6.4 | 无效 UTF-8、NUL、CRLF 和随机字节透传，stderr 分离，损坏输入退出 29，不发布残缺产物 |
+| 10 | `ps010-cross-platform-manifest` | 跨平台可复现构建 | Windows + 隔离 Linux 容器 PowerShell 7.6.4 | 同一冻结脚本、跨平台路径规范化、Unicode、native helper、确定性排序与逐字节相同 manifest |
+
+Linux 容器只充当 PS008/PS010 的隔离远端 PowerShell 端点，不运行被测 OpenCode 或 Judge，也不是第二台虚拟机。
+
+### 被测模型
+
+| 显示名 | OpenCode model | 推理档位 |
+|---|---|---|
+| DeepSeek V4 Flash | `opencode-go/deepseek-v4-flash` | `low` |
+| Qwen 3.7 Plus | `opencode-go/qwen3.7-plus` | provider default |
+| HY3 | `opencode-go/hy3` | `none` |
+| MiMo 2.5 | `opencode-go/mimo-v2.5` | provider default |
+| LongCat 2.0 | `opencode-go/longcat-2.0` | `low` |
+
+两轮矩阵的过程 Judge 均固定为 `opencode-go/gpt-5.6-luna / low`。
+
+## v0.1.0 基线：PowerShell 5.1 五模型 × 五题矩阵
+
+2026-08-27 完成了 PS001–PS005 的 25 次全新、串行、可视化运行。25/25 单元获得有效分数，基础设施失败为 0。
 
 | Task | DeepSeek V4 Flash | Qwen 3.7 Plus | HY3 | MiMo 2.5 | LongCat 2.0 |
 |---|---:|---:|---:|---:|---:|
@@ -34,16 +74,6 @@
 
 发布前另有一次独立的 LongCat 2.0 / PS005 runtime 回归得到 95 分；它不属于上述 5×5 矩阵，也不会覆盖或替换矩阵中的 40 分。重复尝试始终作为不同运行保留。
 
-### 被测模型
-
-| 显示名 | OpenCode model | 推理档位 |
-|---|---|---|
-| DeepSeek V4 Flash | `opencode-go/deepseek-v4-flash` | `low` |
-| Qwen 3.7 Plus | `opencode-go/qwen3.7-plus` | provider default |
-| HY3 | `opencode-go/hy3` | `none` |
-| MiMo 2.5 | `opencode-go/mimo-v2.5` | provider default |
-| LongCat 2.0 | `opencode-go/longcat-2.0` | `low` |
-
 ## 五级 PowerShell 5.1 任务
 
 | Level | Task | 核心能力 |
@@ -56,27 +86,13 @@
 
 详细题目说明见 [`runtime-topo-windows/tasks/README.md`](runtime-topo-windows/tasks/README.md)。每道题均由 Windows PowerShell 5.1 执行隐藏 evaluator，而不是用 PowerShell 7 替代。
 
-## PowerShell 7 高难度题库（开发中）
-
-PS006–PS010 已在工作分支加入，尚未计入 v0.1.0 的 5×5 发布矩阵：
-
-| Level | Task | 运行环境 | 核心能力 |
-|---:|---|---|---|
-| 6 | `ps006-dual-engine-pipeline` | Windows PS5.1 + PS7.6.4 | 对象管道与跨引擎精确字节 |
-| 7 | `ps007-parallel-runspace-fanout` | Windows PS7.6.4 | Runspace、ThrottleLimit 4、native 失败传播 |
-| 8 | `ps008-ssh-remoting-sync` | Windows + Linux 容器 PS7.6.4 | 真正 PowerShell SSH Remoting 与清理 |
-| 9 | `ps009-native-byte-pipeline` | Windows PS7.6.4 | 原生二进制管道与原子发布 |
-| 10 | `ps010-cross-platform-manifest` | Windows + Linux 容器 PS7.6.4 | 同脚本跨平台确定性输出 |
-
-Linux 端是无宿主工作区挂载、无公网出口的隔离容器，不是第二台虚拟机。新题的隐藏场景在 Agent 停止后生成，并随冻结证据保存供 evaluator replay 使用。
-
 ## 整体架构
 
 ```text
 ┌──────────────────────────── Linux / KVM Host ──────────────────────────────┐
 │                                                                            │
 │  Matrix Controller                                                         │
-│  ├─ 读取 benchmark.yaml + low-tier-5x5.yaml                                │
+│  ├─ 读取 benchmark.yaml + 选定的 matrix YAML                               │
 │  ├─ 串行调度 smoke → Agent → Judge → Score → cleanup                       │
 │  └─ 保存 matrix-state.json，支持从安全阶段 --resume                        │
 │                                                                            │
@@ -98,7 +114,7 @@ Linux 端是无宿主工作区挂载、无公网出口的隔离容器，不是�
 │  Administrator SSH control session ◄─┘               │                     │
 │  ├─ 创建全新题目工作区                                │                    │
 │  ├─ Agent 停止后冻结工作区                            │                    │
-│  ├─ 隐藏执行 PowerShell 5.1 evaluator                 │                    │
+│  ├─ 按题目 runtime_matrix 隐藏执行 evaluator          │                    │
 │  └─ 收集证据并清理                                    │                    │
 │                                                      ▼                     │
 │  Active Console · Medium integrity                                         │
@@ -108,7 +124,7 @@ Linux 端是无宿主工作区挂载、无公网出口的隔离容器，不是�
 │                                                                            │
 │  Agent 结束并冻结证据后：                                                  │
 │  Hidden OpenCode Luna Judge → 读取运行记录 → PowerShell 重放 → 过程 0–50   │
-│  Hidden machine evaluator  → 检查最终行为                  → 结果 0–50     │
+│  Hidden machine evaluator  → 按指定 PS5.1/PS7/Linux 运行时检查 → 结果 0–50 │
 └──────────────────────────────────────┬─────────────────────────────────────┘
                                        │ structured results
                                        ▼
@@ -121,7 +137,7 @@ Runner、Judge 和 Scorer 相互分离：
 - **虚拟机在哪里：** Windows Server 2025 guest 运行在 Linux 主机的 QEMU/KVM/libvirt 中；Linux host 持有矩阵控制器、题目 ground truth、运行目录和最终 Scorer。
 - **被测 OpenCode 在哪里：** Agent 只能通过 `Limited` interactive task 启动在 Windows 活动控制台的 Medium-integrity 桌面中，SPICE Viewer 可以看到真实窗口；SSH 只负责 setup、取证、evaluator 和清理，不能替代 Agent 桌面执行。
 - **Judge 怎么测：** Agent 完全停止后，Runner 先冻结工作区、JSONL、进程身份和截图；随后在同一 Windows Medium 桌面隐藏启动另一套 OpenCode，固定使用 `opencode-go/gpt-5.6-luna / low` 阅读冻结证据并执行 PowerShell 重放，给出过程 `0–50` 分。
-- **结果怎么测：** 与 Judge 分开的 PowerShell 5.1 evaluator 按题目声明检查最终行为，给出结果 `0–50` 分；Linux Scorer 只读合成两部分，不允许 Judge 覆盖机器检查。
+- **结果怎么测：** 与 Judge 分开的机器 evaluator 按题目的 `runtime_matrix` 调用锁定的 Windows PowerShell 5.1、Windows PowerShell 7.6.4 或隔离 Linux PowerShell 7.6.4 检查最终行为，给出结果 `0–50` 分；Linux Scorer 只读合成两部分，不允许 Judge 覆盖机器检查。
 - **重复评分会发生什么：** 已冻结运行可以重复生成分数，不重新启动被测 Agent，也不自动挑选最佳结果。
 
 受限 SPICE 只用于观察和截图，clipboard、file transfer、共享目录及 USB 重定向保持禁用。OpenCode 必须运行在真实可见的控制台会话中，不能用 SSH 后台进程冒充桌面评测。
@@ -136,8 +152,8 @@ Runner、Judge 和 Scorer 相互分离：
 cd runtime-topo-windows
 python3 -m runner.run matrix \
   --config benchmark.yaml \
-  --matrix config/low-tier-5x5.yaml \
-  --output /path/to/runs/low-tier-5x5 \
+  --matrix config/ps7-high-tier-5x5.yaml \
+  --output /path/to/runs/ps7-high-tier-5x5 \
   --dry-run
 ```
 
@@ -146,8 +162,8 @@ python3 -m runner.run matrix \
 ```bash
 python3 -m runner.run matrix \
   --config benchmark.yaml \
-  --matrix config/low-tier-5x5.yaml \
-  --output /path/to/runs/low-tier-5x5 \
+  --matrix config/ps7-high-tier-5x5.yaml \
+  --output /path/to/runs/ps7-high-tier-5x5 \
   --visual
 ```
 
@@ -156,8 +172,8 @@ python3 -m runner.run matrix \
 ```bash
 python3 -m runner.run matrix \
   --config benchmark.yaml \
-  --matrix config/low-tier-5x5.yaml \
-  --output /path/to/runs/low-tier-5x5 \
+  --matrix config/ps7-high-tier-5x5.yaml \
+  --output /path/to/runs/ps7-high-tier-5x5 \
   --visual \
   --resume
 ```
@@ -166,8 +182,8 @@ python3 -m runner.run matrix \
 
 ```bash
 python3 -m runner.run score \
-  --output /path/to/runs/low-tier-5x5 \
-  --run-id opencode-ps005-longcat20
+  --output /path/to/runs/ps7-high-tier-5x5 \
+  --run-id RUN_ID_FROM_MATRIX_STATE
 ```
 
 矩阵控制器会为每个正式单元依次完成环境门禁、Agent、Judge、Scorer 和清理。有效的低分会继续下一单元；只有基础设施失败才停止矩阵。
@@ -185,6 +201,7 @@ run root
    ├─ agent.jsonl
    ├─ evaluator.jsonl
    ├─ evaluator.json
+   ├─ evaluator-input.json
    ├─ workspace-after-agent.zip
    ├─ process-judge.json
    ├─ score.json
@@ -197,6 +214,7 @@ run root
 
 - [`runtime-topo-windows/`](runtime-topo-windows/)：KVM Windows runtime、Runner、Judge、Scorer 和矩阵控制器。
 - [`runtime-topo-windows/tasks/`](runtime-topo-windows/tasks/)：PS001–PS010 题目、初始化和隐藏 evaluator。
+- [`runtime-topo-windows/config/ps7-high-tier-5x5.yaml`](runtime-topo-windows/config/ps7-high-tier-5x5.yaml)：PS006–PS010 高难度五模型矩阵定义。
 - [`runtime-topo-windows/config/low-tier-5x5.yaml`](runtime-topo-windows/config/low-tier-5x5.yaml)：v0.1.0 五模型矩阵定义。
 - [`runtime-topo-windows/artifacts/`](runtime-topo-windows/artifacts/)：已公开的早期脱敏运行材料。
 - [`results/`](results/) 与根目录 PowerShell runner：早期 W01/W02 本地 PoC。

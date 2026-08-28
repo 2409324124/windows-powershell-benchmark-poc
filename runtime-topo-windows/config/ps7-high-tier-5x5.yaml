@@ -1,0 +1,22 @@
+schema: wcb.matrix/v1
+id: ps7-high-tier-5x5-20260828
+tasks:
+  - ps006-dual-engine-pipeline
+  - ps007-parallel-runspace-fanout
+  - ps008-ssh-remoting-sync
+  - ps009-native-byte-pipeline
+  - ps010-cross-platform-manifest
+models:
+  - id: deepseek
+    model: opencode-go/deepseek-v4-flash
+    variant: low
+  - id: qwen37
+    model: opencode-go/qwen3.7-plus
+  - id: hy3
+    model: opencode-go/hy3
+    variant: none
+  - id: mimo25
+    model: opencode-go/mimo-v2.5
+  - id: longcat20
+    model: opencode-go/longcat-2.0
+    variant: low

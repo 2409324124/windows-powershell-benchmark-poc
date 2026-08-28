@@ -13,14 +13,29 @@ function Invoke-Case([string]$Name,[int]$FailureExit) {
     $receipt = Join-Path $work ($Name + '-receipt.json')
     $nonce = "nonce-$($spec.seed)-$Name"
     [IO.File]::WriteAllText($payload,(ConvertTo-Json @{nonce=$nonce} -Compress),[Text.UTF8Encoding]::new($false))
-    & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -ConnectionPath $connection -PayloadPath $payload -WorkerPath $worker -ReceiptPath $receipt -RemoteRunId ("$($spec.run_id)-$Name") -FailureExit $FailureExit 1>$null 2>$null
-    [ordered]@{ exit=$LASTEXITCODE; receipt=$receipt; nonce=$nonce; remote=("$($spec.run_id)-$Name") }
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -ConnectionPath $connection -PayloadPath $payload -WorkerPath $worker -ReceiptPath $receipt -RemoteRunId ("$($spec.run_id)-$Name") -FailureExit $FailureExit 1>$null 2>$null
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    [ordered]@{ exit=$exitCode; receipt=$receipt; nonce=$nonce; remote=("$($spec.run_id)-$Name") }
 }
-function Test-RemoteMissing([string]$RunId) {
+function Test-RemoteRunsEmpty {
     $c = Get-Content -LiteralPath $connection -Raw | ConvertFrom-Json
-    $ssh = 'C:\Windows\System32\OpenSSH\ssh.exe'
-    & $ssh -F NUL -p $c.port -i $c.key_file -o "UserKnownHostsFile=$($c.known_hosts_file)" -o StrictHostKeyChecking=yes "$($c.user_name)@$($c.host_name)" "test ! -e '/srv/wcb/runs/$RunId'" 1>$null 2>$null
-    $LASTEXITCODE -eq 0
+    $ssh = Join-Path $env:WCB_SSH_CLIENT_DIR 'ssh.exe'
+    $command = 'test -z "$(find /srv/wcb/runs -mindepth 1 -maxdepth 1 -print -quit)"'
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $ssh -F /dev/null -p $c.port -i $c.key_file -o "UserKnownHostsFile=$($c.known_hosts_file)" -o StrictHostKeyChecking=yes "$($c.user_name)@$($c.host_name)" $command 1>$null 2>$null
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    $exitCode -eq 0
 }
 try {
     $success = Invoke-Case 'success' 0
@@ -36,7 +51,7 @@ try {
         persistent_session = ([regex]::Matches($code,'New-PSSession')).Count -eq 1
         failure_exit_37 = $failure.exit -eq 37 -and -not (Test-Path -LiteralPath $failure.receipt)
         session_closed = $code -match '(?is)finally.+Remove-PSSession'
-        remote_residue_zero = (Test-RemoteMissing $success.remote) -and (Test-RemoteMissing $failure.remote)
+        remote_residue_zero = Test-RemoteRunsEmpty
         passed = $false
     }
     $result.passed = -not @($result.GetEnumerator() | Where-Object { $_.Key -ne 'passed' -and $_.Value -ne $true }).Count

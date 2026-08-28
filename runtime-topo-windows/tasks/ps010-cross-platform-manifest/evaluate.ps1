@@ -5,9 +5,9 @@ $spec = Get-Content -LiteralPath $env:WCB_EVALUATOR_INPUT -Raw | ConvertFrom-Jso
 $script = Join-Path $root 'build-manifest.ps1'
 $helper = Join-Path $root 'tools\manifest-helper.exe'
 $connection = Get-Content -LiteralPath (Join-Path $root 'connection.json') -Raw | ConvertFrom-Json
-$ssh = 'C:\Windows\System32\OpenSSH\ssh.exe'
-$scp = 'C:\Windows\System32\OpenSSH\scp.exe'
-$common = @('-F','NUL','-P',[string]$connection.port,'-i',[string]$connection.key_file,'-o',"UserKnownHostsFile=$($connection.known_hosts_file)",'-o','StrictHostKeyChecking=yes')
+$ssh = Join-Path $env:WCB_SSH_CLIENT_DIR 'ssh.exe'
+$scp = Join-Path $env:WCB_SSH_CLIENT_DIR 'scp.exe'
+$common = @('-F','/dev/null','-P',[string]$connection.port,'-i',[string]$connection.key_file,'-o',"UserKnownHostsFile=$($connection.known_hosts_file)",'-o','StrictHostKeyChecking=yes')
 $remote = "$($connection.user_name)@$($connection.host_name)"
 $work = Join-Path $root ('.evaluator-' + $spec.seed)
 $tree = Join-Path $work 'tree (跨平台)'
@@ -22,26 +22,45 @@ New-Item -ItemType Directory -Path (Join-Path $tree 'deep\子目录 (x)') -Force
 try {
     Push-Location 'C:\Windows\Temp'
     $env:WCB_MANIFEST_AUDIT=$windowsAudit
-    & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -Root $tree -OutputPath $windowsOutput -ToolPath $helper 1>$null 2>$null
-    $winExit1 = $LASTEXITCODE
-    $winBytes1 = if (Test-Path -LiteralPath $windowsOutput) { [IO.File]::ReadAllBytes($windowsOutput) } else { [byte[]]@() }
-    & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -Root $tree -OutputPath $windowsOutput -ToolPath $helper 1>$null 2>$null
-    $winExit2 = $LASTEXITCODE
-    $winBytes2 = if (Test-Path -LiteralPath $windowsOutput) { [IO.File]::ReadAllBytes($windowsOutput) } else { [byte[]]@() }
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -Root $tree -OutputPath $windowsOutput -ToolPath $helper 1>$null 2>$null
+        $winExit1 = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    $winBytes1 = [byte[]]@()
+    if (Test-Path -LiteralPath $windowsOutput) { $winBytes1 = [IO.File]::ReadAllBytes($windowsOutput) }
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -Root $tree -OutputPath $windowsOutput -ToolPath $helper 1>$null 2>$null
+        $winExit2 = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    $winBytes2 = [byte[]]@()
+    if (Test-Path -LiteralPath $windowsOutput) { $winBytes2 = [IO.File]::ReadAllBytes($windowsOutput) }
     Pop-Location
     & $ssh @($common | ForEach-Object { if ($_ -eq '-P') {'-p'} else {$_} }) $remote "rm -rf '$remoteRoot'; mkdir -p '$remoteRoot/tree/deep/子目录 (x)'; printf abc > '$remoteRoot/tree/alpha.txt'; printf 12345 > '$remoteRoot/tree/deep/子目录 (x)/beta file.bin'" 1>$null 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'Linux fixture setup failed' }
-    & $scp @common $script "${remote}:$remoteRoot/build-manifest.ps1" 1>$null 2>$null
+    & $scp -O @common $script "${remote}:$remoteRoot/build-manifest.ps1" 1>$null 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'submitted script upload failed' }
     $linuxCommand = "cd /tmp; WCB_MANIFEST_AUDIT='$remoteRoot/linux.audit' pwsh -NoLogo -NoProfile -NonInteractive -File '$remoteRoot/build-manifest.ps1' -Root '$remoteRoot/tree' -OutputPath '$remoteRoot/linux.json' -ToolPath /opt/wcb/tools/manifest-helper"
-    & $ssh @($common | ForEach-Object { if ($_ -eq '-P') {'-p'} else {$_} }) $remote $linuxCommand 1>$null 2>$null
-    $linuxExit1 = $LASTEXITCODE
-    & $ssh @($common | ForEach-Object { if ($_ -eq '-P') {'-p'} else {$_} }) $remote $linuxCommand 1>$null 2>$null
-    $linuxExit2 = $LASTEXITCODE
-    & $scp @common "${remote}:$remoteRoot/linux.json" $linuxOutput 1>$null 2>$null
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $ssh @($common | ForEach-Object { if ($_ -eq '-P') {'-p'} else {$_} }) $remote $linuxCommand 1>$null 2>$null
+        $linuxExit1 = $LASTEXITCODE
+        & $ssh @($common | ForEach-Object { if ($_ -eq '-P') {'-p'} else {$_} }) $remote $linuxCommand 1>$null 2>$null
+        $linuxExit2 = $LASTEXITCODE
+        & $scp -O @common "${remote}:$remoteRoot/linux.json" $linuxOutput 1>$null 2>$null
+        & $scp -O @common "${remote}:$remoteRoot/linux.audit" (Join-Path $work 'linux.audit') 1>$null 2>$null
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
     $linuxAudit = Join-Path $work 'linux.audit'
-    & $scp @common "${remote}:$remoteRoot/linux.audit" $linuxAudit 1>$null 2>$null
-    $linuxBytes = if (Test-Path -LiteralPath $linuxOutput) { [IO.File]::ReadAllBytes($linuxOutput) } else { [byte[]]@() }
+    $linuxBytes = [byte[]]@()
+    if (Test-Path -LiteralPath $linuxOutput) { $linuxBytes = [IO.File]::ReadAllBytes($linuxOutput) }
     $expected = '[{"path":"alpha.txt","bytes":3},{"path":"deep/子目录 (x)/beta file.bin","bytes":5}]' + "`n"
     $expectedBytes = [Text.UTF8Encoding]::new($false).GetBytes($expected)
     $result = [ordered]@{
@@ -60,6 +79,8 @@ try {
 } finally {
     $env:WCB_MANIFEST_AUDIT=$null
     if ((Get-Location).Path -eq 'C:\Windows\Temp') { Pop-Location }
+    $ErrorActionPreference = 'Continue'
     & $ssh @($common | ForEach-Object { if ($_ -eq '-P') {'-p'} else {$_} }) $remote "rm -rf '$remoteRoot'" 1>$null 2>$null
+    $ErrorActionPreference = 'Stop'
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }

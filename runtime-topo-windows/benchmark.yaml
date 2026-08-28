@@ -16,7 +16,7 @@ runtime:
   approved_overlay: /mnt/PM983/windows-benchmark/runs/canary-transport-001/validated-userstate.qcow2
   expected_integrity_rid: 8192
   ssh_timeout_seconds: 120
-  agent_timeout_seconds: 300
+  agent_timeout_seconds: 600
   keep_on_failure: false
 runtimes:
   win-ps51:
@@ -43,6 +43,7 @@ sidecar:
   ssh_key: /mnt/PM983/windows-benchmark/config/keys/wcb-ps7-sidecar-ed25519
   windows_key_path: 'C:\WCB\keys\ps7-sidecar-ed25519'
   windows_known_hosts_path: 'C:\WCB\keys\ps7-sidecar-known-hosts'
+  windows_ssh_client_dir: 'C:\Program Files\Git\usr\bin'
   windows_user: wcb-agent-admin
 opencode:
   executable: 'C:\Program Files\OpenCode\1.18.21\opencode.exe'

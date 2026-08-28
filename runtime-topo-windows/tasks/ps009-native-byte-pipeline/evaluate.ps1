@@ -10,16 +10,25 @@ $work = Join-Path $root ('.evaluator-' + $spec.seed)
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 function Invoke-Case([string]$Mode,[string]$Output,[string]$Logs) {
-    & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -ProducerPath $producer -TransformerPath $transformer -OutputPath $Output -LogDirectory $Logs -Mode $Mode 1>$null 2>$null
-    $LASTEXITCODE
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -ProducerPath $producer -TransformerPath $transformer -OutputPath $Output -LogDirectory $Logs -Mode $Mode 1>$null 2>$null
+        $exit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    $exit
 }
 try {
     $output = Join-Path $work 'final.bin'
     $logs = Join-Path $work 'logs'
     $exit1 = Invoke-Case 'complete' $output $logs
-    $bytes1 = if (Test-Path -LiteralPath $output) { [IO.File]::ReadAllBytes($output) } else { [byte[]]@() }
+    $bytes1 = [byte[]]@()
+    if (Test-Path -LiteralPath $output) { $bytes1 = [IO.File]::ReadAllBytes($output) }
     $exit2 = Invoke-Case 'complete' $output $logs
-    $bytes2 = if (Test-Path -LiteralPath $output) { [IO.File]::ReadAllBytes($output) } else { [byte[]]@() }
+    $bytes2 = [byte[]]@()
+    if (Test-Path -LiteralPath $output) { $bytes2 = [IO.File]::ReadAllBytes($output) }
     $source = [byte[]](0,255,254,13,10,65,128,66,10,87,67,66,69,78,68)
     $expected = [byte[]]::new($source.Length)
     for ($i=0;$i -lt $source.Length;$i++) { $expected[$i] = $source[$i] -bxor 0x5a }

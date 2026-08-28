@@ -88,7 +88,36 @@ def ensure_sidecar(
     )
     if version != '7.6.4':
         raise SidecarError(f'sidecar PowerShell version is {version}, expected 7.6.4')
-    return {'container': name, 'image': image, 'powershell': version}
+    return {
+        'container': name,
+        'image': image,
+        'powershell': version,
+        'windows_ssh_client_dir': str(sidecar['windows_ssh_client_dir']),
+    }
+
+
+def sidecar_run_residue(config: dict) -> list[str]:
+    sidecar = config.get('sidecar')
+    if not isinstance(sidecar, dict):
+        raise SidecarError('benchmark config has no sidecar section')
+    name = str(sidecar['container_name'])
+    result = _docker([
+        'exec', name, 'sh', '-c',
+        "find /srv/wcb/runs -mindepth 1 -maxdepth 1 -print; "
+        "find /tmp -mindepth 1 -user wcb-task -print",
+    ], timeout=30)
+    output = _require(result, 'sidecar residue probe')
+    return [line for line in output.splitlines() if line]
+
+
+def reset_sidecar(config: dict) -> None:
+    sidecar = config.get('sidecar')
+    if not isinstance(sidecar, dict):
+        raise SidecarError('benchmark config has no sidecar section')
+    name = str(sidecar['container_name'])
+    inspected = _docker(['inspect', name], timeout=30)
+    if inspected.returncode == 0:
+        _require(_docker(['rm', '-f', name], timeout=60), 'sidecar reset')
 
 
 def _install_windows_credentials(
@@ -105,14 +134,25 @@ def _install_windows_credentials(
             raise SidecarError(f'Windows sidecar credential upload failed: {name}')
     key_path = str(sidecar['windows_key_path']).replace("'", "''")
     hosts_path = str(sidecar['windows_known_hosts_path']).replace("'", "''")
+    ssh_client_dir = str(sidecar['windows_ssh_client_dir']).replace("'", "''")
     interactive_user = str(sidecar['windows_user']).replace("'", "''")
     script = rf"""
 $root = Split-Path -Parent '{key_path}'
+foreach ($client in @('ssh.exe','scp.exe')) {{
+    $clientPath = Join-Path '{ssh_client_dir}' $client
+    if (-not (Test-Path -LiteralPath $clientPath -PathType Leaf)) {{
+        throw "configured Windows SSH client is missing: $clientPath"
+    }}
+}}
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 Move-Item -LiteralPath (Join-Path $env:USERPROFILE '{key_upload}') -Destination '{key_path}' -Force
 Move-Item -LiteralPath (Join-Path $env:USERPROFILE '{hosts_upload}') -Destination '{hosts_path}' -Force
 & icacls.exe $root /inheritance:r /grant:r '{interactive_user}:(OI)(CI)R' 'Administrators:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) {{ throw 'sidecar credential ACL failed' }}
+foreach ($path in @('{key_path}','{hosts_path}')) {{
+    & icacls.exe $path /inheritance:r /grant:r '{interactive_user}:R' 'Administrators:F' | Out-Null
+    if ($LASTEXITCODE -ne 0) {{ throw "sidecar credential file ACL failed: $path" }}
+}}
 """
     try:
         result = _execute_control_script(target, script, 'wcb-sidecar-credentials.ps1', timeout=60)

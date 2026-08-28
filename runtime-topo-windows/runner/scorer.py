@@ -239,9 +239,15 @@ def _validate_process_judge_cache(
     *,
     run_id: str,
     judge_identity: dict | None,
+    evaluator_source: dict,
 ) -> dict:
-    if set(envelope) != {'schema', 'run_id', 'judge', 'result'}:
+    fields = set(envelope)
+    base_fields = {'schema', 'run_id', 'judge', 'result'}
+    if fields not in (base_fields, base_fields | {'evaluator_source'}):
         raise EvidenceError('process judge cache envelope has invalid fields')
+    cached_source = envelope.get('evaluator_source')
+    if evaluator_source['kind'] == 'replay' and cached_source != evaluator_source:
+        raise EvidenceError('process judge cache does not match evaluator replay')
     if envelope.get('run_id') != run_id:
         raise EvidenceError('process judge cache run_id contradicts this run')
     result = envelope.get('result')
@@ -341,10 +347,19 @@ def _process_judge_result(
     cache_path = run_dir / 'process-judge.json'
     judge_identity = _judge_identity(judge) if judge is not None else None
     if cache_path.exists():
+        replay_path = run_dir / 'evaluator-replay.json'
+        evaluator_source = {'kind': 'original'}
+        if replay_path.is_file():
+            replay = _read_json(replay_path)
+            captured_at = replay.get('captured_at')
+            if not isinstance(captured_at, str) or not captured_at:
+                raise EvidenceError('evaluator replay has no captured_at')
+            evaluator_source = {'kind': 'replay', 'captured_at': captured_at}
         return _validate_process_judge_cache(
             _read_json(cache_path),
             run_id=run_dir.name,
             judge_identity=judge_identity,
+            evaluator_source=evaluator_source,
         )
     if judge is None:
         raise EvidenceError('missing evidence file: process-judge.json')

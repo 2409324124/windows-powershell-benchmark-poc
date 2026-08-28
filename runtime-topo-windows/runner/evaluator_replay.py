@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from runner.opencode import SshTarget, _execute_control_script
@@ -8,6 +9,7 @@ from runner.real_canary import (
     _evaluator_timeout, _runtime_environment, _wrap_evaluator, load_task,
 )
 from runner.report import utc_now, write_json_atomic
+from runner.sidecar import SidecarError, ensure_sidecar
 
 
 class EvaluatorReplayError(RuntimeError):
@@ -91,6 +93,15 @@ def replay_run(
         identity=Path(guest['ssh_key']),
         known_hosts=Path(guest['known_hosts']),
     )
+    runtime_environment = _runtime_environment(config, manifest)
+    if 'linux-pwsh76' in manifest.get('runtime_matrix', []):
+        try:
+            sidecar = ensure_sidecar(config, project_root, target)
+        except (OSError, SidecarError, subprocess.TimeoutExpired) as error:
+            raise EvaluatorReplayError(
+                f'Linux sidecar preparation failed: {error}'
+            ) from error
+        runtime_environment['WCB_SSH_CLIENT_DIR'] = sidecar['windows_ssh_client_dir']
     remote_archive = f'wcb-{run_id}-evaluator-replay.zip'
     uploaded = target.upload_bytes(archive, remote_archive, timeout=120)
     if uploaded.returncode != 0:
@@ -128,7 +139,7 @@ try {{
         evaluator_script = _wrap_evaluator(
             (task_root / 'evaluate.ps1').read_text(encoding='utf-8'),
             evaluator_input,
-            _runtime_environment(config, manifest),
+            runtime_environment,
             evaluator_root=workspace,
         )
         evaluation = _execute_control_script(
@@ -150,7 +161,13 @@ try {{
         )
     if evaluation is None:
         raise EvaluatorReplayError('evaluator replay did not start')
-    result = _parse_result(evaluation.stdout)
+    try:
+        result = _parse_result(evaluation.stdout)
+    except EvaluatorReplayError as error:
+        detail = evaluation.stderr.decode('utf-8', 'replace').strip()
+        raise EvaluatorReplayError(
+            f'{error}; stderr: {detail or "<empty>"}'
+        ) from error
     if (evaluation.returncode == 0) != result['passed']:
         raise EvaluatorReplayError('evaluator replay exit contradicts passed flag')
     replay = {

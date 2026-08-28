@@ -213,6 +213,8 @@ def _wrap_evaluator(
     for name, value in runtime_environment.items():
         escaped = value.replace("'", "''")
         assignments.append(f"$env:{name}='{escaped}'")
+    if 'WCB_SSH_CLIENT_DIR' in runtime_environment:
+        assignments.append("$env:Path=$env:WCB_SSH_CLIENT_DIR+';'+$env:Path")
     if evaluator_input is None:
         return '\n'.join((*assignments, script))
     encoded = base64.b64encode(
@@ -300,6 +302,7 @@ def run(
     if 'linux-pwsh76' in task_manifest.get('runtime_matrix', []):
         try:
             sidecar = ensure_sidecar(config, project_root, target)
+            runtime_environment['WCB_SSH_CLIENT_DIR'] = sidecar['windows_ssh_client_dir']
         except (OSError, SidecarError, subprocess.TimeoutExpired) as error:
             print(f'Unable to prepare Linux sidecar: {error}', file=sys.stderr)
             return 2
@@ -396,7 +399,10 @@ def run(
         interactive.stage(
             run_id, executable=executable, arguments=tuple(arguments),
             workspace=workspace, expected_session_id=console.session_id,
-            environment={'OPENCODE_CONFIG_CONTENT': _bench_config_content()},
+            environment={
+                'OPENCODE_CONFIG_CONTENT': _bench_config_content(),
+                **runtime_environment,
+            },
         )
         staged = True
         interactive.start(run_id)

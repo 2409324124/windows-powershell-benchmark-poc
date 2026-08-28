@@ -15,9 +15,15 @@ from runner.opencode import (
     _execute_control_script,
 )
 from runner.process_judge import ProcessJudgeError, judge_root
-from runner.real_canary import run as run_real_canary
+from runner.real_canary import load_task, run as run_real_canary
 from runner.report import utc_now, write_json_atomic
 from runner.scorer import EvidenceError, score_root
+from runner.sidecar import (
+    SidecarError,
+    ensure_sidecar,
+    reset_sidecar,
+    sidecar_run_residue,
+)
 from runner.vm import VisualModeError, require_visual_domain, run_libvirt
 
 
@@ -335,6 +341,41 @@ def require_matrix_preflight(config: dict, project_root: Path) -> dict:
     }
 
 
+def _uses_linux_sidecar(config: dict, project_root: Path) -> bool:
+    task_id = config.get('task')
+    if not isinstance(task_id, str) or not task_id:
+        return False
+    _, manifest = load_task(project_root, task_id)
+    return 'linux-pwsh76' in manifest.get('runtime_matrix', [])
+
+
+def _require_clean_sidecar(
+    config: dict,
+    project_root: Path,
+) -> None:
+    if not _uses_linux_sidecar(config, project_root):
+        return
+    target, _ = _target_and_interactive(config, project_root)
+    ensure_sidecar(config, project_root, target)
+    residue = sidecar_run_residue(config)
+    if residue:
+        raise MatrixError(f'Linux sidecar residue is present: {residue}')
+
+
+def _reset_task_sidecar(
+    config: dict,
+    project_root: Path,
+) -> None:
+    if not _uses_linux_sidecar(config, project_root):
+        return
+    reset_sidecar(config)
+    target, _ = _target_and_interactive(config, project_root)
+    ensure_sidecar(config, project_root, target)
+    residue = sidecar_run_residue(config)
+    if residue:
+        raise MatrixError(f'Linux sidecar reset left residue: {residue}')
+
+
 def _validate_agent(
     run_dir: Path, cell: dict,
 ) -> None:
@@ -406,12 +447,15 @@ def _recover_cell(cell: dict, output_root: Path) -> None:
     if phase == 'scoring':
         if (run_dir / 'score.json').is_file():
             _validate_score(run_dir, cell)
-            cell['phase'] = 'complete'
+            cell['phase'] = 'cleanup'
         else:
             cell['phase'] = 'judged'
         phase = cell['phase']
     if phase in {'agent_complete', 'judged'}:
         _validate_agent(run_dir, cell)
+    elif phase == 'cleanup':
+        _validate_agent(run_dir, cell)
+        _validate_score(run_dir, cell)
     elif phase == 'complete':
         _validate_agent(run_dir, cell)
         _validate_score(run_dir, cell)
@@ -475,6 +519,7 @@ def _run_cell(
     run_dir = output_root / cell['run_id']
     if cell['phase'] == 'planned':
         gate = require_matrix_preflight(selected, project_root)
+        _require_clean_sidecar(selected, project_root)
         print(json.dumps({'run_id': cell['run_id'], 'preflight': gate}, ensure_ascii=False))
         cell['phase'] = 'agent_running'
         _write_state(state, output_root)
@@ -513,9 +558,13 @@ def _run_cell(
         if score.get('status') == 'infrastructure_failure' or score.get('score') is None:
             raise MatrixError(f'{cell["run_id"]} scoring failed: {score}')
         _validate_score(run_dir, cell)
+        cell['phase'] = 'cleanup'
+        _write_state(state, output_root)
+    if cell['phase'] == 'cleanup':
+        _reset_task_sidecar(selected, project_root)
+        require_matrix_preflight(selected, project_root)
         cell['phase'] = 'complete'
         _write_state(state, output_root)
-        require_matrix_preflight(selected, project_root)
 
 
 def run(
@@ -593,6 +642,7 @@ def run(
         MatrixError,
         OSError,
         ProcessJudgeError,
+        SidecarError,
         TypeError,
         ValueError,
     ) as error:

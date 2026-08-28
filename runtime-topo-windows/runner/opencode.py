@@ -303,7 +303,7 @@ Start-ScheduledTask -TaskName {_ps_literal(task_name)}
             script = rf"""
 $statePath = {_ps_literal(state_path)}
 $resultPath = {_ps_literal(result_path)}
-if (Test-Path -LiteralPath $statePath) {{
+if (Test-Path -LiteralPath $statePath -ErrorAction SilentlyContinue) {{
   $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
   $wrapper = Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$state.wrapper_pid)" -ErrorAction SilentlyContinue
   $ownerName = ''
@@ -319,10 +319,10 @@ if (Test-Path -LiteralPath $statePath) {{
     wrapper_username=$ownerName
     wrapper_executable=if ($null -ne $wrapper) {{ [string]$wrapper.ExecutablePath }} else {{ '' }}
     wrapper_command_line=if ($null -ne $wrapper) {{ [string]$wrapper.CommandLine }} else {{ '' }}
-    finished=(Test-Path -LiteralPath $resultPath)
+    finished=(Test-Path -LiteralPath $resultPath -ErrorAction SilentlyContinue)
   }} | ConvertTo-Json -Compress -Depth 4
 }} else {{
-  [ordered]@{{ found=$false; finished=(Test-Path -LiteralPath $resultPath) }} | ConvertTo-Json -Compress
+  [ordered]@{{ found=$false; finished=(Test-Path -LiteralPath $resultPath -ErrorAction SilentlyContinue) }} | ConvertTo-Json -Compress
 }}
 """
             payload = _json_result(self.target.run(_control_powershell(script), timeout=30), "launcher inspection")
@@ -377,7 +377,7 @@ if (Test-Path -LiteralPath $statePath) {{
 $statePath = {_ps_literal(state_path)}
 $requestPath = {_ps_literal(request_path)}
 $resultPath = {_ps_literal(result_path)}
-if (Test-Path -LiteralPath $statePath) {{
+if (Test-Path -LiteralPath $statePath -ErrorAction SilentlyContinue) {{
   $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
   $request = Get-Content -LiteralPath $requestPath -Raw | ConvertFrom-Json
   $children = @(Get-CimInstance Win32_Process | Where-Object {{
@@ -402,10 +402,10 @@ if (Test-Path -LiteralPath $statePath) {{
     executable = if ($children.Count -eq 1) {{ [string]$children[0].ExecutablePath }} else {{ '' }}
     command_line = if ($children.Count -eq 1) {{ [string]$children[0].CommandLine }} else {{ '' }}
     username = $ownerName
-    finished = Test-Path -LiteralPath $resultPath
+    finished = Test-Path -LiteralPath $resultPath -ErrorAction SilentlyContinue
   }} | ConvertTo-Json -Compress
 }} else {{
-  [ordered]@{{ wrapper_pid=0; child_count=0; finished=(Test-Path -LiteralPath $resultPath) }} | ConvertTo-Json -Compress
+  [ordered]@{{ wrapper_pid=0; child_count=0; finished=(Test-Path -LiteralPath $resultPath -ErrorAction SilentlyContinue) }} | ConvertTo-Json -Compress
 }}
 """
             payload = _json_result(self.target.run(_control_powershell(script), timeout=30), "process inspection")
@@ -437,7 +437,7 @@ if (Test-Path -LiteralPath $statePath) {{
         result_path = self.guest_dir(launcher.run_id) + r"\result.json"
         script = rf"""
 $path = {_ps_literal(result_path)}
-if (Test-Path -LiteralPath $path) {{ Get-Content -LiteralPath $path -Raw }}
+if (Test-Path -LiteralPath $path -ErrorAction SilentlyContinue) {{ Get-Content -LiteralPath $path -Raw }}
 """
         result = self.target.run(_control_powershell(script), timeout=30)
         if result.returncode != 0:

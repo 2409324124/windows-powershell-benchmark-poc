@@ -17,25 +17,58 @@ function Invoke-Case([string]$Name,[string[]]$Lines,[string]$Expected) {
     $input = Join-Path $case 'input (样本)'
     New-Item -ItemType Directory -Path $input -Force | Out-Null
     Write-Utf8Line (Join-Path $input 'records one.jsonl') $Lines
-    $outputs = @()
+    $expectedBytes = [Text.UTF8Encoding]::new($false).GetBytes($Expected + "`n")
+    $expectedBase64 = [Convert]::ToBase64String($expectedBytes)
+    $firstByEngine = @()
+    $exactChecks = @()
+    $encodingChecks = @()
+    $idempotentChecks = @()
     $exits = @()
     foreach ($engine in @($ps51,$ps76)) {
         $output = Join-Path $case (([IO.Path]::GetFileNameWithoutExtension($engine)) + '.json')
-        & $engine -NoLogo -NoProfile -NonInteractive -File $script -InputDirectory $input -OutputPath $output 1>$null 2>$null
-        $exits += $LASTEXITCODE
-        $first = if (Test-Path -LiteralPath $output) { [IO.File]::ReadAllBytes($output) } else { [byte[]]@() }
-        & $engine -NoLogo -NoProfile -NonInteractive -File $script -InputDirectory $input -OutputPath $output 1>$null 2>$null
-        $exits += $LASTEXITCODE
-        $second = if (Test-Path -LiteralPath $output) { [IO.File]::ReadAllBytes($output) } else { [byte[]]@() }
-        $outputs += ,@($first,$second)
+        $previousPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & $engine -NoLogo -NoProfile -NonInteractive -File $script -InputDirectory $input -OutputPath $output 1>$null 2>$null
+            $nativeExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previousPreference
+        }
+        $exits += $nativeExit
+        $first = [byte[]]@()
+        if (Test-Path -LiteralPath $output) {
+            $first = [IO.File]::ReadAllBytes($output)
+        }
+        try {
+            $ErrorActionPreference = 'Continue'
+            & $engine -NoLogo -NoProfile -NonInteractive -File $script -InputDirectory $input -OutputPath $output 1>$null 2>$null
+            $nativeExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previousPreference
+        }
+        $exits += $nativeExit
+        $second = [byte[]]@()
+        if (Test-Path -LiteralPath $output) {
+            $second = [IO.File]::ReadAllBytes($output)
+        }
+        $firstBase64 = [Convert]::ToBase64String($first)
+        $secondBase64 = [Convert]::ToBase64String($second)
+        $firstByEngine += $firstBase64
+        $exactChecks += $firstBase64 -eq $expectedBase64
+        $encodingChecks += (
+            $first.Length -gt 0 -and
+            $first[0] -ne 0xEF -and
+            $first[-1] -eq 10 -and
+            ($first.Length -eq 1 -or $first[-2] -ne 10)
+        )
+        $idempotentChecks += $firstBase64 -eq $secondBase64
     }
-    $expectedBytes = [Text.UTF8Encoding]::new($false).GetBytes($Expected + "`n")
     [ordered]@{
         exits = -not (@($exits | Where-Object { $_ -ne 0 }).Count)
-        exact = -not (@($outputs | ForEach-Object { ,$_[0] } | Where-Object { [Convert]::ToBase64String($_) -ne [Convert]::ToBase64String($expectedBytes) }).Count)
-        equal = [Convert]::ToBase64String($outputs[0][0]) -eq [Convert]::ToBase64String($outputs[1][0])
-        encoding = -not (@($outputs | ForEach-Object { ,$_[0] } | Where-Object { $_.Length -lt 1 -or $_[0] -eq 0xEF -or $_[-1] -ne 10 -or ($_.Length -gt 1 -and $_[-2] -eq 10) }).Count)
-        idempotent = -not (@($outputs | Where-Object { [Convert]::ToBase64String($_[0]) -ne [Convert]::ToBase64String($_[1]) }).Count)
+        exact = -not (@($exactChecks | Where-Object { $_ -ne $true }).Count)
+        equal = $firstByEngine.Count -eq 2 -and $firstByEngine[0] -eq $firstByEngine[1]
+        encoding = -not (@($encodingChecks | Where-Object { $_ -ne $true }).Count)
+        idempotent = -not (@($idempotentChecks | Where-Object { $_ -ne $true }).Count)
     }
 }
 

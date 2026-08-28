@@ -18,8 +18,14 @@ function Invoke-Scenario([string]$Name,[string]$FailName) {
         '-WorkerPath', $worker, '-StateDirectory', $state
     )
     if ($FailName) { $arguments += @('-FailName', $FailName) }
-    & $pwsh @arguments 1>$null 2>$null
-    $exit = $LASTEXITCODE
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $pwsh @arguments 1>$null 2>$null
+        $exit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
     Start-Sleep -Milliseconds 200
     [ordered]@{ exit=$exit; output=$output; state=$state }
 }
@@ -34,7 +40,10 @@ try {
         } catch { $manifestExact = $false }
     }
     $peak = if (Test-Path -LiteralPath (Join-Path $success.state 'peak.txt')) { [int](Get-Content -LiteralPath (Join-Path $success.state 'peak.txt') -Raw) } else { 0 }
-    $calls = if (Test-Path -LiteralPath (Join-Path $success.state 'calls.jsonl')) { @(Get-Content -LiteralPath (Join-Path $success.state 'calls.jsonl') | ForEach-Object { $_ | ConvertFrom-Json }) } else { @() }
+    $calls = @()
+    if (Test-Path -LiteralPath (Join-Path $success.state 'calls.jsonl')) {
+        $calls = @(Get-Content -LiteralPath (Join-Path $success.state 'calls.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
+    }
     $failName = '07 item (并行).txt'
     $failure = Invoke-Scenario 'failure' $failName
     $source = Get-Content -LiteralPath $script -Raw
